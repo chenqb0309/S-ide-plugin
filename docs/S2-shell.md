@@ -44,6 +44,9 @@ src/core/**             ← 純 Node + TS，禁止 import 'vscode'
 
 **判斷標準：** 一個檔案若需要 `import 'vscode'`，它就不屬於 core。
 
+**另外一條硬規則（理由見 [S1 文件](S1-incremental.md)）：** `src/core/` **禁用 `fs.rmSync`**。
+它對中文路徑會讓 Node 硬崩潰（`0xC0000409`），而本專案的檔名全是中文。刪檔用 `fs.unlinkSync`。
+
 ---
 
 ## 高亮 token 清單（TextMate grammar）

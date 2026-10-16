@@ -112,6 +112,7 @@ node spike/runner.mjs
 | 6 | `partial class` 少了 `namespace` 或 `using` | 生成檔頂部由 harness 統一注入，不交給 AI 寫 |
 | 7 | **attribute 放在 `partial class` 上 → `CS0579 Duplicate`** | 兩個方法檔各加一次，Roslyn 合併 partial 宣告時就重複了。**attribute 要放在「方法」上**——unit 是方法，不是類別 |
 | 8 | **修不了的錯誤會燒完 retry** | 同一組錯誤重複出現時立即中止，並明說「不在 AI 的 action space 內」 |
+| 9 | **`fs.rmSync` 對中文路徑會讓 Node 硬崩潰** | **全面禁用 `fs.rmSync`**。詳見 [S1 文件的完整實測矩陣](S1-incremental.md) |
 
 > 第 6 點是 Prelude 原則的延伸：**骨架（namespace、using、attribute、簽章）由 harness 提供，AI 只填方法內容。** 這樣 AI 出錯的表面積就只剩「方法實作」一項。
 >

@@ -108,8 +108,8 @@ VS Code 外掛的實作。
 
 | 階段 | 目標 | 驗收 | 文件 |
 |---|---|---|---|
-| **S0** | 命令列閉環：`.sem` → 生成 → 編譯 → 修復 → 執行 | 連續改 10 次，10 次成功執行 | [S0](docs/S0-skeleton.md) |
-| **S1** | 保守增量 + manifest + 一單元一檔 | 改 body 只有 1 個 cacheKey 變；刪 `Generated/` 可完全重建 | [S1](docs/S1-incremental.md) |
+| **S0** ✅ | 命令列閉環：`.sem` → 生成 → 編譯 → 修復 → 執行 | 連續改 10 次，10 次成功執行 | [S0](docs/S0-skeleton.md) |
+| **S1** ✅ | 保守增量 + manifest + 一單元一檔 | 改 body 只有 1 個 cacheKey 變；刪 `Generated/` 可完全重建 | [S1](docs/S1-incremental.md) |
 | **S2** | VS Code 外掛殼，接線到 core | Ctrl+click 跨檔跳轉；斷鏈紅線；存檔觸發 | [S2](docs/S2-shell.md) |
 | **S3** | 業務時序鏈 + 執行 + DB 樣本 | 跑出時間軸；執行出錯能指出步驟 | [S3](docs/S3-timeline.md) |
 | **S4** | BYOK 設定 + 打包 | 全新機器填入金鑰即可跑通 | [S4](docs/S4-config-release.md) |
@@ -195,26 +195,40 @@ s-ide-plugin/
 
 ---
 
-## S0 快速驗證
+## S0 / S1 快速驗證
 
 不需要 API Key 也能驗證整條管線：
 
 ```bash
-SIDE_MOCK=1 node spike/runner.mjs                 # 純管線
-SIDE_MOCK=1 SIDE_MOCK_FAIL=1 node spike/runner.mjs # 自我修復迴圈
-SIDE_MOCK=1 SIDE_MOCK_FAIL=9 node spike/runner.mjs # 不可修復時提早放棄
+node spike/runner.mjs                              # 純管線（無金鑰時自動 MOCK）
+node spike/runner.mjs                              # 再跑一次 → 沿用 4、重生 0
+
+SIDE_MOCK_FAIL=1 node spike/runner.mjs             # 自我修復迴圈
+SIDE_MOCK_FAIL=9 node spike/runner.mjs             # 不可修復時提早放棄
+SIDE_FORCE=1     node spike/runner.mjs             # 忽略 manifest，全量重生
 
 # 真的呼叫 AI（BYOK）
 SIDE_BASE_URL=https://api.openai.com/v1 SIDE_MODEL=gpt-4o SIDE_API_KEY=sk-... node spike/runner.mjs
 ```
 
+**看核心宣稱**：改 `samples/棧板堆疊器.sem` 裡任一行 body，再跑一次 —— 輸出會是
+`manifest：沿用 3、重生 1`，並且只有那一個 unit 的 `cacheKey` 改變。
+
 ---
 
 ## 狀態
 
-**S0 完成並驗證通過**（管線、編譯、自我修復、提早放棄、執行）。
+**S0、S1 完成並驗證通過。**
+
+- S0：管線、編譯、自我修復、提早放棄、執行
+- S1：保守增量、manifest、孤兒清理、全刪重建
+
 尚未驗證：**真實 AI 呼叫**（需要 BYOK 金鑰）。
-下一步：**S1 — 保守增量與 manifest**，那一步才會產生核心宣稱（改一行，只有一個方法被重建）。
+
+下一步：**S2 — VS Code 外掛殼**。
+
+> ⚠️ **實作前必讀**：[S1 文件裡的 Node 檔案操作雷](docs/S1-incremental.md)。
+> `fs.rmSync` 對中文路徑會讓 Node 硬崩潰，本專案全面使用中文檔名，因此**禁用 `fs.rmSync`**。
 
 ---
 
