@@ -1,0 +1,18 @@
+# 依賴與產物
+node_modules/
+out/
+dist/
+*.vsix
+
+# .NET
+bin/
+obj/
+
+# 生成物（可拋棄）
+spike/.backend/Generated/
+spike/.backend/Prelude/
+.semantic_backend/
+
+# 工具
+.vscode-test/
+*.log
