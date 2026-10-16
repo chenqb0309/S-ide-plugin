@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SEM",
+  "scopeName": "source.sem",
+  "fileTypes": [".sem"],
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#link" },
+    { "include": "#modifier" },
+    { "include": "#string" },
+    { "include": "#number" },
+    { "include": "#declaration" },
+    { "include": "#control" },
+    { "include": "#type" }
+  ],
+  "repository": {
+    "comment": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.sem"
+    },
+    "link": {
+      "match": "\\[\\[[^\\]\\n]+\\]\\]",
+      "name": "markup.underline.link.sem"
+    },
+    "modifier": {
+      "match": "【[^】\\n]+】",
+      "name": "storage.modifier.sem"
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.sem"
+    },
+    "number": {
+      "match": "\\b\\d+(\\.\\d+)?\\b",
+      "name": "constant.numeric.sem"
+    },
+    "declaration": {
+      "match": "(類別|方法|資料|契約|使用)",
+      "name": "keyword.declaration.sem"
+    },
+    "control": {
+      "match": "(如果|否則如果|否則|每個|於|重複|當|返回|拋出|嘗試|捕捉|錯誤|等於|不等於|大於|小於)",
+      "name": "keyword.control.sem"
+    },
+    "type": {
+      "match": "(字串|整數|長整數|小數|布林|日期|清單|可空|空)",
+      "name": "storage.type.sem"
+    }
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "name": "s-ide-plugin",
+  "displayName": "S-IDE",
+  "description": "語義是唯一的原始碼；C# 是可拋棄的產物。以 .sem 為唯一真相來源的 coding agent harness。",
+  "version": "0.1.0",
+  "publisher": "chenqb0309",
+  "license": "SEE LICENSE IN LICENSE",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "sem",
+    "semantic",
+    "harness",
+    "spec"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:**/*.sem"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "sem",
+        "aliases": [
+          "SEM",
+          "S-IDE 規格"
+        ],
+        "extensions": [
+          ".sem"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sem",
+        "scopeName": "source.sem",
+        "path": "./syntaxes/sem.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "S-IDE",
+      "properties": {
+        "side.baseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "markdownDescription": "OpenAI 相容端點。任何相容服務都可以：OpenAI、DeepSeek、OpenRouter、Groq、本機 Ollama…"
+        },
+        "side.model": {
+          "type": "string",
+          "default": "",
+          "description": "模型名稱，例如 gpt-4o 或 qwen2.5-coder:7b"
+        },
+        "side.maxRetry": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "編譯失敗時，回饋給 AI 重新生成的上限次數"
+        },
+        "side.autoGenerateOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "儲存 .sem 時自動觸發生成"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "side.setApiKey",
+        "title": "S-IDE: 設定 API Key"
+      },
+      {
+        "command": "side.generate",
+        "title": "S-IDE: 生成（存檔觸發的那條管線）"
+      },
+      {
+        "command": "side.execute",
+        "title": "S-IDE: 執行"
+      },
+      {
+        "command": "side.rebuildAll",
+        "title": "S-IDE: 刪除 Generated/ 並全部重建"
+      },
+      {
+        "command": "side.showContextMap",
+        "title": "S-IDE: 顯示 Context Map"
+      },
+      {
+        "command": "side.showManifestDiff",
+        "title": "S-IDE: 顯示上次的 Manifest 變動"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "check": "node scripts/check-layering.mjs",
+    "run": "node scripts/run.mjs",
+    "vscode:prepublish": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.7.0"
+  }
+}

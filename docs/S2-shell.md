@@ -102,14 +102,81 @@ src/core/**             ← 純 Node + TS，禁止 import 'vscode'
 
 ---
 
-## 驗收
+## 進入點慣例
 
-1. 開一個含 `.sem` 的資料夾 → 外掛自動啟用，關鍵字上色
-2. `Ctrl + 點擊` `[[類別.方法]]` → 跳轉到目標檔案的正確行
-3. 把目標方法改名 → **當場出現紅線**
-4. 存檔 → 觸發管線，狀態列顯示進度
-5. 改一行 body → OutputChannel 的 manifest diff 顯示**只有 1 個 unit 變**
-6. **`src/core/**` 對 `vscode` 零相依**（`grep -r "from 'vscode'" src/core` 為空）
+後台是一個 console 專案，它總得知道要呼叫什麼。慣例：
+
+```sem
+類別 程式 {
+    方法 主() { ... }
+}
+```
+
+`Program.cs` 由 harness **機械生成**（不經 AI）：
+
+```csharp
+using SemanticBackend;
+using SIDE.Prelude;
+
+Console.OutputEncoding = System.Text.Encoding.UTF8;
+Telemetry.Step("程式啟動");
+
+var 入口 = new 程式();
+入口.主();
+```
+
+沒有這個類別時，`Program.cs` 會生成一段「未定義進入點」的提示，而不是編譯失敗。
+
+---
+
+## 驗收（已實測）
+
+| # | 項目 | 結果 |
+|---|---|---|
+| 1 | workspace 級管線（多個 `.sem` 共用一個後台專案） | ✅ 掃描、生成、manifest 都是 workspace 級 |
+| 2 | 首次使用自動 scaffold `.semantic_backend` | ✅ 含 `Backend.csproj`、`Program.cs`、`Prelude/`、`S-IDE.md` |
+| 3 | 無改動 | ✅ 沿用 6、重生 0 |
+| 4 | 只改一行 body | ✅ **沿用 5、重生 1** |
+| 5 | 斷鏈（`[[不存在.方法]]`） | ✅ 報錯並**阻斷生成** |
+| 6 | 類別重複定義 | ✅ 報錯並阻斷生成 |
+| 7 | 刪掉 `Generated/` 完全重建 | ✅ 6 個 unit 全部重生並執行成功 |
+| 8 | 分層規則 | ✅ `npm run check` 通過：`src/core/` 對 `vscode` 零相依 |
+| 9 | 業務時序鏈輸出 | ✅ `程式.主 → 建立樣本 → 計算單層箱數` |
+
+**未經 VS Code GUI 實測**：高亮上色、DocumentLink 的 Ctrl+click、診斷紅線的視覺呈現、狀態列。
+這些需要真的開一個 Extension Development Host 才看得到，程式碼已編譯通過但沒有 GUI 驗證。
+
+---
+
+## 實作後補的兩個決策
+
+### 1. DocumentLink 不夠，還要 DefinitionProvider
+
+`DocumentLink` 的 `target` 只接受 `Uri`，而 **VS Code 對檔案 Uri 會忽略 fragment** ——
+所以 Ctrl+click 只會「開啟目標檔案」，**不會跳到那一行**。
+
+要精確跳行，必須另外註冊 `DefinitionProvider`（回傳 `Location` + `Position`）。
+因此兩個都註冊：DocumentLink 負責把 `[[...]]` 畫成可點擊的藍色連結，DefinitionProvider 負責精確定位。
+
+> 白皮書原本寫「DocumentLinkProvider 會跳轉到對應行數」，這是錯的。
+
+### 2. ⚠️ 修飾符不能只靠 prompt（重要）
+
+原本以為 `【獨佔鎖定】` → `SemaphoreSlim` 只是 prompt 的一條規則。**不是。**
+
+鎖物件必須是一個**欄位**，否則 AI 只能在方法內 `new SemaphoreSlim(1,1)`——
+每一次呼叫都拿一把新鎖，**完全沒有互斥效果**。而欄位落在 `契約` 區，屬於 harness 的職責。
+
+所以修飾符的正確實作是：
+
+| 層 | 要做的事 |
+|---|---|
+| harness | 從 `契約` 或修飾符推導出**欄位宣告**，寫進 `<類別>.Fields.g.cs` |
+| harness | 對 `【並行處理】` 決定方法簽章要不要 `async`（簽章是 harness 生成的） |
+| prompt | 才輪到「在 body 裡使用那個欄位」 |
+
+**這推翻了「四個中文字 → 完整機制」的想像**：機制的一半在 harness 的程式碼生成裡，不在 prompt 裡。
+這是 **S3** 的工作，也是這份文件目前最重要的一條修正。
 
 ---
 

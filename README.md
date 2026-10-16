@@ -110,9 +110,9 @@ VS Code 外掛的實作。
 |---|---|---|---|
 | **S0** ✅ | 命令列閉環：`.sem` → 生成 → 編譯 → 修復 → 執行 | 連續改 10 次，10 次成功執行 | [S0](docs/S0-skeleton.md) |
 | **S1** ✅ | 保守增量 + manifest + 一單元一檔 | 改 body 只有 1 個 cacheKey 變；刪 `Generated/` 可完全重建 | [S1](docs/S1-incremental.md) |
-| **S2** | VS Code 外掛殼，接線到 core | Ctrl+click 跨檔跳轉；斷鏈紅線；存檔觸發 | [S2](docs/S2-shell.md) |
-| **S3** | 業務時序鏈 + 執行 + DB 樣本 | 跑出時間軸；執行出錯能指出步驟 | [S3](docs/S3-timeline.md) |
-| **S4** | BYOK 設定 + 打包 | 全新機器填入金鑰即可跑通 | [S4](docs/S4-config-release.md) |
+| **S2** ✅ | VS Code 外掛殼，接線到 core | 高亮、跳轉、斷鏈紅線、存檔觸發、設定頁、首次 scaffold | [S2](docs/S2-shell.md) |
+| **S3** | 業務時序鏈面板 + 修飾符注入 + DB 樣本 | 時序鏈面板；`【獨佔鎖定】` 長出 `SemaphoreSlim` | [S3](docs/S3-timeline.md) |
+| **S4** | 打包 + 上架 | 全新機器填入金鑰即可跑通 | [S4](docs/S4-config-release.md) |
 
 **順序理由：S0 是最危險的一步（`spawn dotnet` + 錯誤解析），所以排第一，而且刻意不做 UI。**
 跳轉、高亮是最容易做得漂亮、但最不承載論點的部分，排在後面。
@@ -138,30 +138,34 @@ VS Code 外掛的實作。
 
 ```
 s-ide-plugin/
-├─ prelude/                        # ✅ C# 前導庫（被 Backend.csproj 以 Compile Include 連結）
-│  ├─ SemanticSourceAttribute.cs
-│  └─ Telemetry.cs
-├─ samples/
-│  └─ 棧板堆疊器.sem               # ✅ S0 零依賴樣本
-├─ spike/                          # ✅ S0 拋棄式原型
-│  ├─ .backend/                    #    Backend.csproj / Program.cs / Generated/
-│  └─ runner.mjs
-├─ docs/                           # ✅ 設計文件
-│
-│  ── 以下為 S2 ──
-├─ package.json                    # extension manifest（contributes）
-├─ tsconfig.json
+├─ package.json                    # extension manifest（contributes / 設定 / 命令）
 ├─ language-configuration.json     # 括號配對、註解符號
 ├─ syntaxes/sem.tmLanguage.json    # 高亮（宣告檔，無程式邏輯）
-└─ src/
-   ├─ extension.ts                 # 薄 adapter：只接線，不做邏輯
-   └─ core/                        # 純 Node + TS，禁止 import 'vscode'
-      ├─ parse.ts / addressing.ts / context-map.ts
-      ├─ manifest.ts / translate.ts / build.ts / pipeline.ts
+├─ prelude/                        # C# 前導庫。AI 只能引用，不能發明
+│  ├─ SemanticSourceAttribute.cs
+│  └─ Telemetry.cs
+├─ src/
+│  ├─ extension.ts                 # 薄 adapter：只接線，不做邏輯
+│  └─ core/                        # 純 Node + TS，禁止 import 'vscode'
+│     ├─ parse.ts                  # .sem → AST
+│     ├─ lint.ts                   # 定址規則 lint（類別唯一／禁多載／斷鏈）
+│     ├─ codegen.ts                # 簽章索引、單元切割、harness 骨架生成
+│     ├─ manifest.ts               # cache key / 保守增量 / 孤兒清理
+│     ├─ translate.ts              # OpenAI 相容呼叫（BYOK）
+│     ├─ build.ts                  # spawn dotnet + CS 錯誤解析
+│     ├─ scaffold.ts               # 首次使用偷偷建 .semantic_backend
+│     ├─ pipeline.ts               # 串起整條管線
+│     └─ fsx.ts                    # 安全檔案操作（禁用 fs.rmSync）
+├─ scripts/
+│  ├─ run.mjs                      # CLI：終端機跑同一條管線
+│  └─ check-layering.mjs           # 強制 src/core/ 不得相依 vscode
+├─ samples/棧板堆疊器.sem
+├─ docs/
+└─ .vscode/                        # F5 啟動設定
 ```
 
 **為什麼不用 monorepo（workspaces）**：v0 不需要，會多一層建置複雜度。
-**但分層規則用 lint 強制**：`src/core/**` 不得 import `vscode`。一行 eslint 規則就夠，卻保住了未來脫離宿主的自由。
+**但分層規則用腳本強制**：`npm run check` 會讓 `src/core/**` 相依 `vscode` 直接失敗。這是寄生策略唯一的保險。
 
 ---
 
@@ -195,37 +199,60 @@ s-ide-plugin/
 
 ---
 
-## S0 / S1 快速驗證
+## 跑起來
+
+### 方式一：VS Code 外掛（F5）
+
+```bash
+npm install
+npm run compile
+```
+
+然後在 VS Code 按 <kbd>F5</kbd> —— 會開出一個 **Extension Development Host** 視窗。
+在那個視窗開啟含 `.sem` 的資料夾（例如本 repo 的 `samples/`），就會自動啟用。
+
+1. 執行命令 `S-IDE: 設定 API Key`，貼上金鑰（存進 `SecretStorage`，不寫入 `settings.json`）
+2. 設定 `side.model`（例如 `gpt-4o`）
+3. 開 `samples/棧板堆疊器.sem` → 應該看到中文關鍵字高亮
+4. <kbd>Ctrl</kbd>+<kbd>S</kbd> 存檔 → 觸發生成
+5. 命令 `S-IDE: 執行`，或點狀態列左下角的 **S-IDE**
+
+> 想省錢可以用本機 Ollama：`side.baseUrl` = `http://localhost:11434/v1`、`side.model` = `qwen2.5-coder:7b`，API Key 隨便填。
+
+### 方式二：CLI（同一條管線，除錯用）
 
 不需要 API Key 也能驗證整條管線：
 
 ```bash
-node spike/runner.mjs                              # 純管線（無金鑰時自動 MOCK）
-node spike/runner.mjs                              # 再跑一次 → 沿用 4、重生 0
+npm run compile
+npm run check                          # 分層檢查
 
-SIDE_MOCK_FAIL=1 node spike/runner.mjs             # 自我修復迴圈
-SIDE_MOCK_FAIL=9 node spike/runner.mjs             # 不可修復時提早放棄
-SIDE_FORCE=1     node spike/runner.mjs             # 忽略 manifest，全量重生
+node scripts/run.mjs                   # execute（無金鑰時自動 MOCK）
+SIDE_MODE=compile  node scripts/run.mjs
+SIDE_MODE=rebuild  node scripts/run.mjs   # 刪掉 Generated/ 完全重建
+SIDE_MOCK_FAIL=1   node scripts/run.mjs   # 自我修復迴圈
+SIDE_MOCK_FAIL=9   node scripts/run.mjs   # 不可修復時提早放棄
 
 # 真的呼叫 AI（BYOK）
-SIDE_BASE_URL=https://api.openai.com/v1 SIDE_MODEL=gpt-4o SIDE_API_KEY=sk-... node spike/runner.mjs
+SIDE_BASE_URL=https://api.openai.com/v1 SIDE_MODEL=gpt-4o SIDE_API_KEY=sk-... node scripts/run.mjs
 ```
 
 **看核心宣稱**：改 `samples/棧板堆疊器.sem` 裡任一行 body，再跑一次 —— 輸出會是
-`manifest：沿用 3、重生 1`，並且只有那一個 unit 的 `cacheKey` 改變。
+`manifest：沿用 5、重生 1`，並且只有那一個 unit 的 `cacheKey` 改變。
 
 ---
 
 ## 狀態
 
-**S0、S1 完成並驗證通過。**
+**S0、S1、S2 完成並驗證通過。**
 
 - S0：管線、編譯、自我修復、提早放棄、執行
 - S1：保守增量、manifest、孤兒清理、全刪重建
+- S2：VS Code 外掛（高亮、跳轉、斷鏈紅線、存檔觸發、BYOK 設定、首次 scaffold）、workspace 級管線
 
-尚未驗證：**真實 AI 呼叫**（需要 BYOK 金鑰）。
+尚未驗證：**真實 AI 呼叫**（需要 BYOK 金鑰）。目前所有驗證都在 MOCK 模式，即「管線本身」已被證明，但「模型第一次能否吐出編譯得過的 body」尚未實測。
 
-下一步：**S2 — VS Code 外掛殼**。
+下一步：**S3 — 業務時序鏈面板與修飾符注入**。
 
 > ⚠️ **實作前必讀**：[S1 文件裡的 Node 檔案操作雷](docs/S1-incremental.md)。
 > `fs.rmSync` 對中文路徑會讓 Node 硬崩潰，本專案全面使用中文檔名，因此**禁用 `fs.rmSync`**。
