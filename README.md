@@ -138,29 +138,26 @@ VS Code 外掛的實作。
 
 ```
 s-ide-plugin/
-├─ package.json                    # extension manifest（contributes）
-├─ tsconfig.json
-├─ language-configuration.json     # 括號配對、註解符號
-├─ syntaxes/
-│  └─ sem.tmLanguage.json          # 高亮（宣告檔）
-├─ src/
-│  ├─ extension.ts                 # 薄 adapter：只接線，不做邏輯
-│  └─ core/                        # 純 Node + TS，禁止 import 'vscode'
-│     ├─ parse.ts                  # .sem → AST
-│     ├─ addressing.ts             # 類別.方法 定址
-│     ├─ context-map.ts            # 全掃 → 簽章索引
-│     ├─ manifest.ts               # cache key / 增量 / 孤兒清理
-│     ├─ translate.ts              # OpenAI 相容呼叫
-│     ├─ build.ts                  # spawn dotnet + CS 錯誤解析
-│     └─ pipeline.ts               # 串起整條管線
-├─ prelude/                        # C# 前導庫
-│  ├─ SIDE.Prelude.csproj
+├─ prelude/                        # ✅ C# 前導庫（被 Backend.csproj 以 Compile Include 連結）
 │  ├─ SemanticSourceAttribute.cs
 │  └─ Telemetry.cs
 ├─ samples/
-│  ├─ 棧板堆疊器.sem               # S0：零依賴
-│  └─ 用戶服務.sem                 # S3：SQLite
-└─ docs/                           # 設計文件
+│  └─ 棧板堆疊器.sem               # ✅ S0 零依賴樣本
+├─ spike/                          # ✅ S0 拋棄式原型
+│  ├─ .backend/                    #    Backend.csproj / Program.cs / Generated/
+│  └─ runner.mjs
+├─ docs/                           # ✅ 設計文件
+│
+│  ── 以下為 S2 ──
+├─ package.json                    # extension manifest（contributes）
+├─ tsconfig.json
+├─ language-configuration.json     # 括號配對、註解符號
+├─ syntaxes/sem.tmLanguage.json    # 高亮（宣告檔，無程式邏輯）
+└─ src/
+   ├─ extension.ts                 # 薄 adapter：只接線，不做邏輯
+   └─ core/                        # 純 Node + TS，禁止 import 'vscode'
+      ├─ parse.ts / addressing.ts / context-map.ts
+      ├─ manifest.ts / translate.ts / build.ts / pipeline.ts
 ```
 
 **為什麼不用 monorepo（workspaces）**：v0 不需要，會多一層建置複雜度。
@@ -198,9 +195,26 @@ s-ide-plugin/
 
 ---
 
+## S0 快速驗證
+
+不需要 API Key 也能驗證整條管線：
+
+```bash
+SIDE_MOCK=1 node spike/runner.mjs                 # 純管線
+SIDE_MOCK=1 SIDE_MOCK_FAIL=1 node spike/runner.mjs # 自我修復迴圈
+SIDE_MOCK=1 SIDE_MOCK_FAIL=9 node spike/runner.mjs # 不可修復時提早放棄
+
+# 真的呼叫 AI（BYOK）
+SIDE_BASE_URL=https://api.openai.com/v1 SIDE_MODEL=gpt-4o SIDE_API_KEY=sk-... node spike/runner.mjs
+```
+
+---
+
 ## 狀態
 
-**設計完成，S0 進行中。**
+**S0 完成並驗證通過**（管線、編譯、自我修復、提早放棄、執行）。
+尚未驗證：**真實 AI 呼叫**（需要 BYOK 金鑰）。
+下一步：**S1 — 保守增量與 manifest**，那一步才會產生核心宣稱（改一行，只有一個方法被重建）。
 
 ---
 

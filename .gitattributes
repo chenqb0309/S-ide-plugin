@@ -1,0 +1,12 @@
+# 統一以 LF 存入 repo。
+# 理由：.sem 的 body 之後要做 hash 比較（S1 的 cache key），
+# 若同一份內容在不同機器上換行不同，會產生假的「變動」。
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.vsix binary
+
+# 生成的 C# 帶 BOM，不要被轉換
+*.g.cs -text
