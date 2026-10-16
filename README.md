@@ -240,6 +240,19 @@ SIDE_BASE_URL=https://api.openai.com/v1 SIDE_MODEL=gpt-4o SIDE_API_KEY=sk-... no
 **看核心宣稱**：改 `samples/棧板堆疊器.sem` 裡任一行 body，再跑一次 —— 輸出會是
 `manifest：沿用 5、重生 1`，並且只有那一個 unit 的 `cacheKey` 改變。
 
+### 疑難排解：編輯器滿江紅，但 `npm run compile` 是綠的
+
+這是 VS Code 專案最常見的假警報，跟程式碼無關。**以 `npm run compile` 為準。**
+
+| 症狀 | 原因 | 修法 |
+|---|---|---|
+| `找不到名稱 'clearTimeout'`、`找不到命名空間 'NodeJS'`、`Cannot find module 'node:path'` | TypeScript server 在 `npm install` 之前就啟動了，快取裡沒有 `node_modules/@types` | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> → **`TypeScript: Restart TS Server`** |
+| 重啟後仍在 | VS Code 用的是內建 TypeScript，不是專案那一份 | 本 repo 已附 `.vscode/settings.json` 釘住 `typescript.tsdk`；首次開啟會問你要不要用工作區版本，選 **Allow** |
+| 完全不對 | 你開的是單一檔案，不是資料夾 | `File → Open Folder` 開**含 `tsconfig.json` 的那一層** |
+
+診斷指令：<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> → `TypeScript: Go to Project Configuration`，
+應該要跳到 `tsconfig.json`。
+
 ---
 
 ## 狀態

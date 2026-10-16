@@ -1,0 +1,10 @@
+{
+  // 用專案自己的 TypeScript，不要用 VS Code 內建那一份。
+  // 兩者版本不一致時，@types/node 這類型別解析會失效，
+  // 症狀是編輯器滿江紅但 `npm run compile` 完全正常。
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  // 與 .gitattributes (eol=lf) 一致，避免換行造成假的 diff
+  "files.eol": "\n"
+}

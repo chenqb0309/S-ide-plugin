@@ -13,7 +13,9 @@
     "noImplicitOverride": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    // 明示型別來源，不要靠自動推斷（否則編輯器與 CLI 可能看到不同的世界）
+    "types": ["node", "vscode"]
   },
   "include": ["src/**/*.ts"]
 }
