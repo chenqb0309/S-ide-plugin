@@ -4,7 +4,7 @@
   "description": "語義是唯一的原始碼；C# 是可拋棄的產物。以 .sem 為唯一真相來源的 coding agent harness。",
   "version": "0.1.0",
   "publisher": "chenqb0309",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "UNLICENSED",
   "private": true,
   "engines": {
     "vscode": "^1.90.0"
