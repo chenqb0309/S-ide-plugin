@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { AiConfig } from './translate';
 import type { CompileResult, LintDiagnostic, RunResult, SemFile } from './types';
 import { parseSem } from './parse';
-import { collectSymbols, hasBlocking, lint, lintLinks } from './lint';
+import { collectSymbols, hasBlocking, lint, lintLinks, lintStaleSyntax } from './lint';
 import { contextMapForPrompt, genClassSkeleton, genDto, genMethodFile, planUnits, signatureIndexText } from './codegen';
 import { build, executeBackend, generatedDir } from './build';
 import {
@@ -69,9 +69,11 @@ export async function compile(opts: PipelineOptions): Promise<CompileResult> {
 
   // ── lint（免費的第一層驗證，不需要編譯器） ──────────────────────────────
   const symbols = collectSymbols(files);
+  const read = (rel: string): string => readText(path.join(opts.workspaceRoot, rel));
   const diagnostics: LintDiagnostic[] = [
     ...lint(files),
-    ...lintLinks(files, symbols, (rel) => readText(path.join(opts.workspaceRoot, rel))),
+    ...lintLinks(files, symbols, read),
+    ...lintStaleSyntax(files, read),
   ];
   for (const d of diagnostics) {
     log(`  ${d.severity === 'error' ? '❌' : '⚠️'} ${d.relPath}:${d.line + 1} ${d.message}`);

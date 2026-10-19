@@ -183,9 +183,11 @@ function analyze(): Analysis {
   }
 
   const symbols = core.collectSymbols(files);
+  const read = (rel: string): string => core.readText(path.join(root, rel));
   const diagnostics = [
     ...core.lint(files),
-    ...core.lintLinks(files, symbols, (rel) => core.readText(path.join(root, rel))),
+    ...core.lintLinks(files, symbols, read),
+    ...core.lintStaleSyntax(files, read),
   ];
 
   return { root, files, symbols, diagnostics };

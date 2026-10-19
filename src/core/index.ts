@@ -1,7 +1,7 @@
 export * from './types';
 export * from './versions';
 export { parseSem, findLinks, normalize } from './parse';
-export { collectSymbols, lint, lintLinks, hasBlocking, ENTRY_CLASS, ENTRY_METHOD, type SymbolTable } from './lint';
+export { collectSymbols, lint, lintLinks, lintStaleSyntax, hasBlocking, ENTRY_CLASS, ENTRY_METHOD, type SymbolTable } from './lint';
 export { genProgramCs, contextMapForPrompt, mapType, methodSignature, planUnits, NAMESPACE } from './codegen';
 export { Translator, stripFence, type AiConfig, type TranslatorOptions } from './translate';
 export {

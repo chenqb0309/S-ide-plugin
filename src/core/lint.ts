@@ -123,6 +123,32 @@ export function lintLinks(
   return diags;
 }
 
+/**
+ * 抓已經改掉的舊寫法——避免它們**靜默失效**。
+ *
+ * 例：`方法 記錄(字串 訊息) {` 在新文法下一個字都解析不到，方法會憑空消失、
+ * 所有指向它的連結變成斷鏈。這種「東西不見了但沒人說」正是最貴的錯誤。
+ */
+export function lintStaleSyntax(files: SemFile[], reader: (relPath: string) => string): LintDiagnostic[] {
+  const diags: LintDiagnostic[] = [];
+  for (const f of files) {
+    const lines = reader(f.relPath).split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      if (/^\s*方法\s+\S+\s*\(/.test(lines[i])) {
+        diags.push({
+          relPath: f.relPath,
+          line: i,
+          severity: 'error',
+          message:
+            '方法簽章已改為宣告式：`方法 名稱 {` 之後寫 `輸入: 型別 名稱` 與 `輸出: 型別`。' +
+            '`方法 名稱(...)` 這種寫法在 v0 不會被解析，方法會整條消失。',
+        });
+      }
+    }
+  }
+  return diags;
+}
+
 export function hasBlocking(diags: LintDiagnostic[]): boolean {
   return diags.some((d) => d.severity === 'error');
 }

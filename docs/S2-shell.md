@@ -112,7 +112,7 @@ src/core/**             ← 純 Node + TS，禁止 import 'vscode'
 
 ```sem
 類別 程式 {
-    方法 主() { ... }
+    方法 主 { ... }
 }
 ```
 

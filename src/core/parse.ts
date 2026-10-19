@@ -107,16 +107,17 @@ function parseClass(name: string, line: number, srcFile: string, body: Located[]
       continue;
     }
 
-    const m = t.match(/^方法\s+([^\s(]+)\s*\((.*)\)\s*(?::\s*([^\s{]+))?\s*\{$/);
+    const m = t.match(/^方法\s+([^\s{]+)\s*\{$/);
     if (m) {
       const b = readBlock(body, i);
+      const sig = readSignature(b.body);
       methods.push({
         className: name,
         name: m[1],
         line: body[i].line,
-        params: parseParams(m[2]),
-        returns: m[3] ?? '空',
-        bodyText: normalize(b.body.map((l) => l.text).join('\n')),
+        params: sig.params,
+        returns: sig.returns,
+        bodyText: normalize(sig.body.map((l) => l.text).join('\n')),
         srcFile,
       });
       i = b.next;
@@ -129,10 +130,43 @@ function parseClass(name: string, line: number, srcFile: string, body: Located[]
   return { name, line, fields, methods, srcFile };
 }
 
+/**
+ * 方法區塊的上半是**契約**（`輸入:` / `輸出:`），下半才是**實作**。
+ *
+ * 這就是「骨架精確，body 自由」的字面形狀：一眼看得出哪幾行是機器要的，
+ * 哪幾行是給人讀的。兩者都不寫也可以——那就是無參數、無回傳。
+ */
+function readSignature(body: Located[]): { params: Param[]; returns: string; body: Located[] } {
+  const params: Param[] = [];
+  let returns = '空';
+  let k = 0;
+
+  for (; k < body.length; k += 1) {
+    const t = body[k].text.trim();
+    if (!t) continue;
+
+    const mi = t.match(/^輸入\s*[:：]\s*(.*)$/);
+    if (mi) {
+      if (mi[1].trim()) params.push(...parseParams(mi[1]));
+      continue;
+    }
+
+    const mo = t.match(/^輸出\s*[:：]\s*(.*)$/);
+    if (mo) {
+      returns = mo[1].trim() || '空';
+      continue;
+    }
+
+    break;
+  }
+
+  return { params, returns, body: body.slice(k) };
+}
+
 function parseParams(raw: string): Param[] {
   const s = raw.trim();
   if (!s) return [];
-  return s.split(',').map((p) => {
+  return s.split(/[,，]/).map((p) => {
     const m = p.trim().match(/^(\S+)\s+([^\s]+)$/);
     if (!m) throw new Error(`無法解析參數：${p}`);
     return { type: m[1], name: m[2] };
