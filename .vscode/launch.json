@@ -6,12 +6,25 @@
       "type": "extensionHost",
       "request": "launch",
       "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}"
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/${input:sample}"
       ],
       "outFiles": [
         "${workspaceFolder}/out/**/*.js"
       ],
       "preLaunchTask": "npm: compile"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "sample",
+      "type": "pickString",
+      "description": "要用哪個資料夾當工作區？（一個樣本 = 一個工作區）",
+      "options": [
+        "samples/WarehouseShipping",
+        "samples/PalletStacker"
+      ],
+      "default": "samples/WarehouseShipping"
     }
   ]
 }
