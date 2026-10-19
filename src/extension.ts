@@ -187,6 +187,8 @@ function analyze(): Analysis {
   const diagnostics = [
     ...core.lint(files),
     ...core.lintLinks(files, symbols, read),
+    ...core.lintNames(files),
+    ...core.lintTypes(files, symbols),
     ...core.lintStaleSyntax(files, read),
   ];
 

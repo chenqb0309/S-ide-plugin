@@ -22,7 +22,7 @@ S0 刻意**不做 UI**。因為它要驗證的是整條管線裡最危險的東�
 ## 產出
 
 ```
-samples/棧板堆疊器.sem      # 零依賴樣本（docs/01-sem-v0.md 的完整範例）
+samples/PalletStacker/PalletStacker.sem   # 零依賴樣本（docs/01-sem-v0.md 的完整範例）
 prelude/                    # C# 前導庫，由 Backend.csproj 以 Compile Include 連結
 ├─ SemanticSourceAttribute.cs
 └─ Telemetry.cs

@@ -138,7 +138,7 @@ cache key = hash(unit 契約 + unit body
 
 ### 為什麼這件事對本專案特別致命
 
-這個專案的設計是**全面使用中文檔名**（`棧板堆疊器.sem`、`棧板堆疊器.計算單層箱數.g.cs`）。
+本專案的樣本已改用 ASCII 檔名（`PalletStacker.sem`、`PalletStacker.BoxesPerLayer.g.cs`），**但使用者專案仍可能有中文路徑**（例如 `C:\Users\小明\source\...`），所以這條規則不變。
 所以它不是「偶爾踩到」，而是 **100% 會踩到**。
 
 ### 規則（必須寫進 `src/core/`）

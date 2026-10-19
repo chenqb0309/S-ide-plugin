@@ -1,0 +1,116 @@
+# WarehouseShipping.sem
+#
+# 重量級樣本。目的：驗證「同一份規格，換一個模型，產出能不能直接用」。
+#
+# 它刻意具備三件小樣本沒有的東西：
+#   1. 多類別、跨單元呼叫（4 個 class、5 個 func）
+#   2. requires 注入（ShippingService 需要 ShippingFeeCalculator／InventoryService／AuditLog）
+#   3. 真實業務規則（區域分級、免運門檻、偏遠加成、超重加成、庫存檢核）
+#
+# 語言界線：
+#   框架用英文的習慣寫法；識別字一律 ASCII；敘述用中文（那是語義層，不進 C#）
+#
+# 連結語法：反引號。`類別` 或 `類別.方法`，兩者都可點擊、都會檢查斷鏈。
+
+data Order {
+    str OrderNo
+    str Region
+    decimal TotalAmount
+    decimal WeightKg
+    bool Remote
+}
+
+class AuditLog {
+    func Write {
+        in: str message
+
+        步驟 "輸出稽核訊息"
+        取得現在時間，只保留 時:分:秒
+        以 "[時間] message" 的格式打印到主控台
+    }
+}
+
+class ShippingFeeCalculator {
+    requires {
+        `AuditLog`
+    }
+
+    func CalculateFee {
+        in: Order order
+        out: decimal
+
+        步驟 "免運門檻"
+        order.TotalAmount 達到 1000 元，運費為 0 並直接返回
+
+        步驟 "依區域分級計價"
+        北部 每公斤 30，未滿 100 以 100 計
+        中部 每公斤 35，未滿 120 以 120 計
+        南部 每公斤 40，未滿 150 以 150 計
+        其他區域 每公斤 50，未滿 150 以 150 計
+
+        步驟 "偏遠地區加成"
+        order.Remote 為真時，額外加收 200
+
+        步驟 "超重加成"
+        order.WeightKg 超過 20 的部分，每公斤 再加 10
+
+        步驟 "記錄試算"
+        呼叫 `AuditLog.Write`，內容包含單號與算出的運費
+
+        返回 fee
+    }
+}
+
+class InventoryService {
+    func HasStock {
+        in: Order order
+        out: bool
+
+        步驟 "檢查庫存量"
+        order.WeightKg 超過 500，視為庫存不足，返回 假
+        否則返回 真
+    }
+}
+
+class ShippingService {
+    requires {
+        `ShippingFeeCalculator`
+        `InventoryService`
+        `AuditLog`
+    }
+
+    func Ship {
+        in: Order order
+        out: str
+
+        步驟 "檢查庫存"
+        呼叫 `InventoryService.HasStock`，不足則返回「單號 庫存不足」
+
+        步驟 "計算運費"
+        呼叫 `ShippingFeeCalculator.CalculateFee` 取得運費
+
+        步驟 "產出出貨單"
+        組出一段含單號、運費、總金額的文字
+
+        步驟 "記錄出貨"
+        呼叫 `AuditLog.Write`，內容為出貨單文字
+
+        返回 note
+    }
+}
+
+class App {
+    func Main {
+        步驟 "第一張：北部、已達免運門檻"
+        建立訂單：單號 A001、北部、總金額 1200、重量 18 公斤、非偏遠
+        呼叫 `ShippingService.Ship` 並輸出回傳值
+
+        步驟 "第二張：南部、偏遠、超重"
+        建立訂單：單號 A002、南部、總金額 500、重量 26 公斤、偏遠地區
+        呼叫 `ShippingService.Ship` 並輸出回傳值
+
+        步驟 "第三張：庫存不足"
+        建立訂單：單號 A003、北部、總金額 800、重量 700 公斤、非偏遠
+        呼叫 `ShippingService.Ship` 並輸出回傳值
+    }
+}

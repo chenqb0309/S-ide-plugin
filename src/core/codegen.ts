@@ -5,24 +5,9 @@ import { ENTRY_CLASS, ENTRY_METHOD } from './lint';
 export const NAMESPACE = 'SemanticBackend';
 
 // ── 型別對映 ────────────────────────────────────────────────────────────────
-const TYPE_MAP: Record<string, string> = {
-  字串: 'string',
-  整數: 'int',
-  長整數: 'long',
-  小數: 'decimal',
-  布林: 'bool',
-  日期: 'DateTime',
-  空: 'void',
-};
-
-export function mapType(t: string): string {
-  const s = t.trim();
-  const list = s.match(/^清單<(.+)>$/);
-  if (list) return `List<${mapType(list[1])}>`;
-  const nullable = s.match(/^可空<(.+)>$/);
-  if (nullable) return `${mapType(nullable[1])}?`;
-  return TYPE_MAP[s] ?? s;
-}
+// 詞彙定義在 typing.ts（lint 也需要它，而本檔已反向依賴 lint 的進入點常數）。
+import { mapType } from './typing';
+export { mapType, baseTypeName, BCL_TYPES } from './typing';
 
 export function methodSignature(m: Method): string {
   const params = m.params.map((p) => `${mapType(p.type)} ${p.name}`).join(', ');
@@ -31,13 +16,13 @@ export function methodSignature(m: Method): string {
 
 // ── 契約文字（進簽章索引與 cache key） ──────────────────────────────────────
 export const dtoContract = (d: DataDecl): string =>
-  `資料 ${d.name} { ${d.fields.map((f) => `${f.type} ${f.name}`).join('; ')} }`;
+  `data ${d.name} { ${d.fields.map((f) => `${f.type} ${f.name}`).join('; ')} }`;
 
 export const depsContract = (c: ClassDecl): string =>
-  `類別 ${c.name} 契約 { ${c.fields.map((f) => `${f.type} ${f.name}`).join('; ')} }`;
+  `class ${c.name} requires { ${c.fields.map((f) => `${f.type} ${f.name}`).join('; ')} }`;
 
 export const sigOf = (m: Method): string =>
-  `方法 ${m.className}.${m.name}(${m.params.map((p) => `${p.type} ${p.name}`).join(', ')}) : ${m.returns}`;
+  `func ${m.className}.${m.name}(${m.params.map((p) => `${p.type} ${p.name}`).join(', ')}) : ${m.returns}`;
 
 // ── 單元切割 ────────────────────────────────────────────────────────────────
 export function planUnits(files: SemFile[]): Unit[] {
@@ -45,7 +30,7 @@ export function planUnits(files: SemFile[]): Unit[] {
   for (const f of files) {
     for (const d of f.datas) {
       units.push({
-        key: `資料 ${d.name}`,
+        key: `data ${d.name}`,
         kind: 'dto',
         file: `${d.name}.g.cs`,
         contract: dtoContract(d),
@@ -57,7 +42,7 @@ export function planUnits(files: SemFile[]): Unit[] {
     }
     for (const c of f.classes) {
       units.push({
-        key: `契約 ${c.name}`,
+        key: `requires ${c.name}`,
         kind: 'fields',
         file: `${c.name}.Fields.g.cs`,
         contract: depsContract(c),
@@ -174,7 +159,7 @@ export function genProgramCs(files: SemFile[]): string {
       '// 由 S-IDE 生成。請勿手動編輯。',
       'Console.OutputEncoding = System.Text.Encoding.UTF8;',
       'Console.WriteLine("未定義進入點。請在 .sem 中宣告：");',
-      `Console.WriteLine("    類別 ${ENTRY_CLASS} { 方法 ${ENTRY_METHOD}() { ... } }");`,
+      `Console.WriteLine("    類別 ${ENTRY_CLASS} { 方法 ${ENTRY_METHOD} { ... } }");`,
       '',
     ].join('\n');
   }
@@ -188,8 +173,8 @@ export function genProgramCs(files: SemFile[]): string {
     '',
     'Telemetry.Step("程式啟動");',
     '',
-    `var 入口 = new ${ENTRY_CLASS}();`,
-    `入口.${ENTRY_METHOD}();`,
+    `var app = new ${ENTRY_CLASS}();`,
+    `app.${ENTRY_METHOD}();`,
     '',
   ].join('\n');
 }
@@ -202,10 +187,10 @@ export function contextMapForPrompt(files: SemFile[]): string {
       lines.push(`${d.name}: ${d.fields.map((x) => `${mapType(x.type)} ${x.name}`).join(', ')}`);
     }
     for (const c of f.classes) {
-      // 契約必須讓 AI 看見，否則它不知道協作者的欄位名，只能自己發明 → CS0103
+      // requires 必須讓 AI 看見，否則它不知道協作者的欄位名，只能自己發明 → CS0103
       const deps = c.fields
         .filter((x) => x.dependency)
-        .map((x) => `  契約欄位 ${mapType(x.type)} ${x.name}`)
+        .map((x) => `  requires ${mapType(x.type)} ${x.name}`)
         .join('\n');
       const methods = c.methods.map((m) => `  ${methodSignature(m)}`).join('\n');
       lines.push(`class ${c.name} {\n${deps ? `${deps}\n` : ''}${methods}\n}`);

@@ -35,7 +35,7 @@
       "name": "constant.numeric.sem"
     },
     "declaration": {
-      "match": "(類別|方法|資料|契約|輸入|輸出)",
+      "match": "(class|func|data|requires|in|out)",
       "name": "keyword.declaration.sem"
     },
     "control": {

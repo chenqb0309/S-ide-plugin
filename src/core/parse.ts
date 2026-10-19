@@ -27,7 +27,7 @@ export function parseSem(relPath: string, src: string): SemFile {
   while (i < lines.length) {
     const t = lines[i].text.trim();
 
-    const mData = t.match(/^資料\s+([^\s{]+)\s*\{$/);
+    const mData = t.match(/^data\s+([^\s{]+)\s*\{$/);
     if (mData) {
       const b = readBlock(lines, i);
       datas.push({ name: mData[1], line: lines[i].line, srcFile, fields: parseFields(b.body) });
@@ -35,7 +35,7 @@ export function parseSem(relPath: string, src: string): SemFile {
       continue;
     }
 
-    const mClass = t.match(/^類別\s+([^\s{]+)\s*\{$/);
+    const mClass = t.match(/^class\s+([^\s{]+)\s*\{$/);
     if (mClass) {
       const b = readBlock(lines, i);
       classes.push(parseClass(mClass[1], lines[i].line, srcFile, b.body));
@@ -96,9 +96,9 @@ function parseClass(name: string, line: number, srcFile: string, body: Located[]
   while (i < body.length) {
     const t = body[i].text.trim();
 
-    if (t === '契約 {') {
+    if (t === 'requires {') {
       const b = readBlock(body, i);
-      // 契約的每一行就是一個連結：`類別名`（宣告「我需要這個協作者」）
+      // requires 的每一行就是一個連結：`類別名`（宣告「我需要這個協作者」）
       for (const l of b.body) {
         const m = l.text.trim().match(/^`([^`]+)`$/);
         if (m) fields.push({ type: m[1], name: m[1], dependency: true });
@@ -107,7 +107,7 @@ function parseClass(name: string, line: number, srcFile: string, body: Located[]
       continue;
     }
 
-    const m = t.match(/^方法\s+([^\s{]+)\s*\{$/);
+    const m = t.match(/^func\s+([^\s{]+)\s*\{$/);
     if (m) {
       const b = readBlock(body, i);
       const sig = readSignature(b.body);
@@ -131,29 +131,29 @@ function parseClass(name: string, line: number, srcFile: string, body: Located[]
 }
 
 /**
- * 方法區塊的上半是**契約**（`輸入:` / `輸出:`），下半才是**實作**。
+ * func 區塊的上半是**契約**（`in:` / `out:`），下半才是**實作**。
  *
  * 這就是「骨架精確，body 自由」的字面形狀：一眼看得出哪幾行是機器要的，
  * 哪幾行是給人讀的。兩者都不寫也可以——那就是無參數、無回傳。
  */
 function readSignature(body: Located[]): { params: Param[]; returns: string; body: Located[] } {
   const params: Param[] = [];
-  let returns = '空';
+  let returns = 'void';
   let k = 0;
 
   for (; k < body.length; k += 1) {
     const t = body[k].text.trim();
     if (!t) continue;
 
-    const mi = t.match(/^輸入\s*[:：]\s*(.*)$/);
+    const mi = t.match(/^in\s*[:：]\s*(.*)$/);
     if (mi) {
       if (mi[1].trim()) params.push(...parseParams(mi[1]));
       continue;
     }
 
-    const mo = t.match(/^輸出\s*[:：]\s*(.*)$/);
+    const mo = t.match(/^out\s*[:：]\s*(.*)$/);
     if (mo) {
-      returns = mo[1].trim() || '空';
+      returns = mo[1].trim() || 'void';
       continue;
     }
 

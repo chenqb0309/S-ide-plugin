@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { AiConfig } from './translate';
 import type { CompileResult, LintDiagnostic, RunResult, SemFile } from './types';
 import { parseSem } from './parse';
-import { collectSymbols, hasBlocking, lint, lintLinks, lintStaleSyntax } from './lint';
+import { collectSymbols, hasBlocking, lint, lintLinks, lintNames, lintStaleSyntax, lintTypes } from './lint';
 import { contextMapForPrompt, genClassSkeleton, genDto, genMethodFile, planUnits, signatureIndexText } from './codegen';
 import { build, executeBackend, generatedDir } from './build';
 import {
@@ -53,7 +53,7 @@ export async function compile(opts: PipelineOptions): Promise<CompileResult> {
   if (files.length === 0) {
     log(`找不到任何 .sem（掃描根目錄：${opts.workspaceRoot}）`);
     log('提示：samples/ 底下每個樣本都是獨立工作區。');
-    log('     請把工作區開在樣本資料夾（例：samples/倉儲出貨），不要開 repo 根目錄。');
+    log('     請把工作區開在樣本資料夾（例：samples/WarehouseShipping），不要開 repo 根目錄。');
     return {
       ok: false,
       blocked: true,
@@ -73,6 +73,8 @@ export async function compile(opts: PipelineOptions): Promise<CompileResult> {
   const diagnostics: LintDiagnostic[] = [
     ...lint(files),
     ...lintLinks(files, symbols, read),
+    ...lintNames(files),
+    ...lintTypes(files, symbols),
     ...lintStaleSyntax(files, read),
   ];
   for (const d of diagnostics) {

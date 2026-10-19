@@ -51,7 +51,7 @@ public sealed class SemanticSourceAttribute(string srcFile, int line) : Attribut
 public static class Telemetry
 {
     public static void Step(string message);
-    // 輸出：[10:01] 棧板堆疊器.計算單層箱數 → 步驟2 判斷重量級距
+    // 輸出：[10:01] PalletStacker.BoxesPerLayer → 步驟2 判斷重量級距
 }
 ```
 
@@ -66,7 +66,7 @@ public interface 資料庫
 // Prelude 提供 SQLite 實作，連線由 harness 管理
 ```
 
-使用者在 `.sem` 只寫 `使用 資料庫 _db`，AI 直接用 `_db.查詢用戶(...)`，**不需要知道連線怎麼來的**。
+使用者在 `.sem` 的 `requires` 只寫 `` `Database` ``，AI 直接用 `Database.QueryUser(...)`，**不需要知道連線怎麼來的**。
 
 這是 v0 完全不需要 DI 自動裝配的原因。
 

@@ -1,8 +1,9 @@
 import type { LintDiagnostic, SemFile } from './types';
 import { findLinks } from './parse';
+import { BCL_TYPES, baseTypeName } from './typing';
 
-export const ENTRY_CLASS = '程式';
-export const ENTRY_METHOD = '主';
+export const ENTRY_CLASS = 'App';
+export const ENTRY_METHOD = 'Main';
 
 export interface SymbolTable {
   /** 類別名 → 定義所在的 .sem 相對路徑與行號（0-based） */
@@ -58,7 +59,7 @@ export function lint(files: SemFile[]): LintDiagnostic[] {
             relPath: f.relPath,
             line: decl.line - 1,
             severity: 'error',
-            message: `${label}「${decl.name}」重複定義（已在 ${prev} 定義）。類別名必須全域唯一——這是 \`類別.方法\` 能被唯一定址的前提。若你開啟的資料夾含多個樣本，請改開單一樣本（例：samples/倉儲出貨）。`,
+            message: `${label}「${decl.name}」重複定義（已在 ${prev} 定義）。類別名必須全域唯一——這是 \`類別.方法\` 能被唯一定址的前提。若你開啟的資料夾含多個樣本，請改開單一樣本（例：samples/WarehouseShipping）。`,
           });
         } else {
           seen.set(decl.name, f.relPath);
@@ -123,26 +124,115 @@ export function lintLinks(
   return diags;
 }
 
+const ASCII_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * 識別字一律 ASCII。
+ *
+ * 偽代碼可以中文命名，但**程式碼不行**。中文識別字會讓 JSON 欄位名變中文、
+ * 讓反射／ORM／analyzer 踩雷、讓工具鏈不保證支援——而且我們實測過，
+ * 生成的檔案非得加 BOM 才編得過。
+ *
+ * 所以這條規則在**規格層**就擋掉，讓它永遠到不了 C#。
+ * 中文請留在敘述、步驟與字串裡——那裡才是給人讀的地方。
+ */
+export function lintNames(files: SemFile[]): LintDiagnostic[] {
+  const diags: LintDiagnostic[] = [];
+  const bad = (relPath: string, line: number, kind: string, name: string): void => {
+    if (ASCII_NAME.test(name)) return;
+    diags.push({
+      relPath,
+      line,
+      severity: 'error',
+      message: `${kind}名「${name}」不是 ASCII 識別字。偽代碼可以中文命名，但生成的程式碼不行——請改成英文，中文留在敘述裡。`,
+    });
+  };
+
+  for (const f of files) {
+    for (const d of f.datas) {
+      bad(f.relPath, d.line - 1, 'data', d.name);
+      for (const fl of d.fields) bad(f.relPath, d.line - 1, '欄位', fl.name);
+    }
+    for (const c of f.classes) {
+      bad(f.relPath, c.line - 1, 'class', c.name);
+      for (const fl of c.fields) bad(f.relPath, c.line - 1, '欄位', fl.name);
+      for (const m of c.methods) {
+        bad(f.relPath, m.line - 1, 'func', m.name);
+        for (const p of m.params) bad(f.relPath, m.line - 1, '參數', p.name);
+      }
+    }
+  }
+  return diags;
+}
+
+/**
+ * 未知型別在規格層就擋掉。
+ *
+ * 若放行到編譯器，它會變成生成檔裡的 `CS0246` —— 那不在 AI 的 action space 內
+ * （型別是簽章的一部分，不在 body 裡），自我修復迴圈修不了，只是白燒重試次數。
+ */
+export function lintTypes(files: SemFile[], symbols: SymbolTable): LintDiagnostic[] {
+  const diags: LintDiagnostic[] = [];
+  const known = (t: string): boolean => {
+    const base = baseTypeName(t);
+    return BCL_TYPES.has(base) || symbols.classes.has(base) || symbols.datas.has(base);
+  };
+  const check = (relPath: string, line: number, t: string, where: string): void => {
+    if (known(t)) return;
+    diags.push({
+      relPath,
+      line,
+      severity: 'error',
+      message: `未知型別「${t}」（${where}）。可用的是白名單（str／int／long／decimal／bool／date／void／list<T>）或本專案宣告的 class／data。`,
+    });
+  };
+
+  for (const f of files) {
+    for (const d of f.datas) {
+      for (const fl of d.fields) check(f.relPath, d.line - 1, fl.type, `data ${d.name}`);
+    }
+    for (const c of f.classes) {
+      for (const fl of c.fields.filter((x) => x.dependency)) {
+        check(f.relPath, c.line - 1, fl.type, `class ${c.name} 的 requires`);
+      }
+      for (const m of c.methods) {
+        for (const p of m.params) check(f.relPath, m.line - 1, p.type, `${c.name}.${m.name} 參數`);
+        check(f.relPath, m.line - 1, m.returns, `${c.name}.${m.name} 回傳`);
+      }
+    }
+  }
+  return diags;
+}
+
 /**
  * 抓已經改掉的舊寫法——避免它們**靜默失效**。
  *
- * 例：`方法 記錄(字串 訊息) {` 在新文法下一個字都解析不到，方法會憑空消失、
- * 所有指向它的連結變成斷鏈。這種「東西不見了但沒人說」正是最貴的錯誤。
+ * v0 的框架詞彙已經全面改成英文。舊的中文關鍵字在新 parser 下一個字都解析不到：
+ * 方法會整條消失、指向它的連結全變斷鏈，而沒有任何訊息。所以一律當場報錯。
  */
 export function lintStaleSyntax(files: SemFile[], reader: (relPath: string) => string): LintDiagnostic[] {
   const diags: LintDiagnostic[] = [];
+  const STALE: [RegExp, string][] = [
+    [/^\s*類別\s+\S+\s*\{$/, '類別'],
+    [/^\s*資料\s+\S+\s*\{$/, '資料'],
+    [/^\s*方法\s+\S+\s*[({]/, '方法'],
+    [/^\s*契約\s*\{$/, '契約'],
+    [/^\s*輸入\s*[:：]/, '輸入'],
+    [/^\s*輸出\s*[:：]/, '輸出'],
+  ];
+
   for (const f of files) {
     const lines = reader(f.relPath).split(/\r?\n/);
     for (let i = 0; i < lines.length; i += 1) {
-      if (/^\s*方法\s+\S+\s*\(/.test(lines[i])) {
+      for (const [re, word] of STALE) {
+        if (!re.test(lines[i])) continue;
         diags.push({
           relPath: f.relPath,
           line: i,
           severity: 'error',
-          message:
-            '方法簽章已改為宣告式：`方法 名稱 {` 之後寫 `輸入: 型別 名稱` 與 `輸出: 型別`。' +
-            '`方法 名稱(...)` 這種寫法在 v0 不會被解析，方法會整條消失。',
+          message: `「${word}」是舊的寫法。v0 框架詞彙已全面改為英文：class／func／data／requires／in:／out:。用舊寫法會整條解析不到，不會有任何提示。`,
         });
+        break;
       }
     }
   }

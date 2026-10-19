@@ -51,7 +51,7 @@ export type UnitKind = 'dto' | 'fields' | 'method';
 export interface Unit {
   key: string;
   kind: UnitKind;
-  /** 生成的檔名，例如 `棧板堆疊器.計算單層箱數.g.cs` */
+  /** 生成的檔名，例如 `PalletStacker.BoxesPerLayer.g.cs` */
   file: string;
   /** 凍結契約的文字（簽章／型別／欄位） */
   contract: string;
