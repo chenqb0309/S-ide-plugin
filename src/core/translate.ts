@@ -55,8 +55,10 @@ export class Translator {
 
   private mockBody(m: Method): string {
     const key = `${m.className}.${m.name}`;
-    const body = MOCK_BODIES[key];
-    if (!body) throw new Error(`MOCK 模式沒有 ${key} 的罐頭回應`);
+    // 允許用 `<檔名>.sem:<類別>.<方法>` 覆寫——多個樣本工作區都以 `程式.主` 為入口
+    const scoped = `${m.srcFile}:${key}`;
+    const body = MOCK_BODIES[scoped] ?? MOCK_BODIES[key];
+    if (!body) throw new Error(`MOCK 模式沒有 ${scoped} 的罐頭回應`);
 
     if (this.opts.mockFail) {
       const n = (this.calls.get(key) ?? 0) + 1;
@@ -82,6 +84,8 @@ function systemPrompt(contextMap: string): string {
     '',
     '【基礎設施注入】',
     '5. 規格中的每個 `步驟 "說明"`，在對應位置生成 Telemetry.Step("說明")。',
+    '6. `契約` 宣告的協作者，harness 已經注入成欄位（欄位名 = 類別名）。',
+    '   直接使用它們，例如 `庫存服務.檢查庫存(單)`；**絕對不要自己 new**。',
     '',
     '【可用型別】',
     contextMap,
@@ -134,5 +138,96 @@ const MOCK_BODIES: Record<string, string> = {
     'var 層數 = 堆疊器.計算可堆疊層數(規格, 1800);',
     'Console.WriteLine($"單層箱數   = {單層}");',
     'Console.WriteLine($"可堆疊層數 = {層數}");',
+  ].join('\n'),
+
+  // ── 重量級樣本 samples/倉儲出貨（用來離線驗證 harness，不含 AI） ──────────
+  '稽核日誌.記錄': [
+    'Telemetry.Step("輸出稽核訊息");',
+    'Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {訊息}");',
+  ].join('\n'),
+
+  '運費計算器.計算運費': [
+    'Telemetry.Step("免運門檻");',
+    'if (單.總金額 >= 1000m)',
+    '{',
+    '    return 0m;',
+    '}',
+    '',
+    'Telemetry.Step("依區域分級計價");',
+    'decimal 每公斤 = 單.配送區域 switch',
+    '{',
+    '    "北部" => 30m,',
+    '    "中部" => 35m,',
+    '    "南部" => 40m,',
+    '    _ => 50m,',
+    '};',
+    'decimal 最低收費 = 單.配送區域 switch',
+    '{',
+    '    "北部" => 100m,',
+    '    "中部" => 120m,',
+    '    "南部" => 150m,',
+    '    _ => 150m,',
+    '};',
+    'decimal 運費 = Math.Max(單.重量公斤 * 每公斤, 最低收費);',
+    '',
+    'Telemetry.Step("偏遠地區加成");',
+    'if (單.偏遠地區)',
+    '{',
+    '    運費 += 200m;',
+    '}',
+    '',
+    'Telemetry.Step("超重加成");',
+    'if (單.重量公斤 > 20m)',
+    '{',
+    '    運費 += (單.重量公斤 - 20m) * 10m;',
+    '}',
+    '',
+    'Telemetry.Step("記錄試算");',
+    '稽核日誌.記錄($"{單.單號} 運費 {運費}");',
+    '',
+    'return 運費;',
+  ].join('\n'),
+
+  '庫存服務.檢查庫存': [
+    'Telemetry.Step("檢查庫存量");',
+    'if (單.重量公斤 > 500m)',
+    '{',
+    '    return false;',
+    '}',
+    'return true;',
+  ].join('\n'),
+
+  '出貨服務.出貨': [
+    'Telemetry.Step("檢查庫存");',
+    'if (!庫存服務.檢查庫存(單))',
+    '{',
+    '    return $"{單.單號} 庫存不足";',
+    '}',
+    '',
+    'Telemetry.Step("計算運費");',
+    'var 運費 = 運費計算器.計算運費(單);',
+    '',
+    'Telemetry.Step("產出出貨單");',
+    'var 出貨單文字 = $"{單.單號} 運費 {運費} 總金額 {單.總金額}";',
+    '',
+    'Telemetry.Step("記錄出貨");',
+    '稽核日誌.記錄(出貨單文字);',
+    '',
+    'return 出貨單文字;',
+  ].join('\n'),
+
+  '倉儲出貨.sem:程式.主': [
+    'Telemetry.Step("第一張：北部、已達免運門檻");',
+    'var 單1 = new 訂單 { 單號 = "A001", 配送區域 = "北部", 總金額 = 1200m, 重量公斤 = 18m, 偏遠地區 = false };',
+    'var 出貨 = new 出貨服務();',
+    'Console.WriteLine(出貨.出貨(單1));',
+    '',
+    'Telemetry.Step("第二張：南部、偏遠、超重");',
+    'var 單2 = new 訂單 { 單號 = "A002", 配送區域 = "南部", 總金額 = 500m, 重量公斤 = 26m, 偏遠地區 = true };',
+    'Console.WriteLine(出貨.出貨(單2));',
+    '',
+    'Telemetry.Step("第三張：庫存不足");',
+    'var 單3 = new 訂單 { 單號 = "A003", 配送區域 = "北部", 總金額 = 800m, 重量公斤 = 700m, 偏遠地區 = false };',
+    'Console.WriteLine(出貨.出貨(單3));',
   ].join('\n'),
 };

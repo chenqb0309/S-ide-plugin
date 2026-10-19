@@ -110,10 +110,18 @@ export function genDto(d: DataDecl): string {
   ].join('\n');
 }
 
+/**
+ * `契約` → 真實欄位。
+ *
+ * 這一段是「基礎設施注入」的核心：`.sem` 只寫 `使用 稽核日誌 稽核`，
+ * 欄位與實例由 harness 生成。AI 只能「使用」，不能「發明」——
+ * 所以 `稽核.記錄(...)` 這種引用保證編得過，自我修復迴圈不會死在
+ * 「欄位不存在」這種它根本修不了的錯誤上（見 docs/02-prelude-v0.md）。
+ */
 export function genClassSkeleton(c: ClassDecl): string {
   const deps = c.fields
     .filter((f) => f.dependency)
-    .map((f) => `    // 由 .sem 契約宣告：${f.type} ${f.name}`)
+    .map((f) => `    private readonly ${mapType(f.type)} ${f.name} = new ${mapType(f.type)}();`)
     .join('\n');
   return [
     'using SIDE.Prelude;',
@@ -122,7 +130,7 @@ export function genClassSkeleton(c: ClassDecl): string {
     '',
     `public partial class ${c.name}`,
     '{',
-    deps,
+    deps || '    // 契約為空',
     '}',
     '',
   ].join('\n');
@@ -194,8 +202,13 @@ export function contextMapForPrompt(files: SemFile[]): string {
       lines.push(`${d.name}: ${d.fields.map((x) => `${mapType(x.type)} ${x.name}`).join(', ')}`);
     }
     for (const c of f.classes) {
+      // 契約必須讓 AI 看見，否則它不知道協作者的欄位名，只能自己發明 → CS0103
+      const deps = c.fields
+        .filter((x) => x.dependency)
+        .map((x) => `  契約欄位 ${mapType(x.type)} ${x.name}`)
+        .join('\n');
       const methods = c.methods.map((m) => `  ${methodSignature(m)}`).join('\n');
-      lines.push(`class ${c.name} {\n${methods}\n}`);
+      lines.push(`class ${c.name} {\n${deps ? `${deps}\n` : ''}${methods}\n}`);
     }
   }
   return lines.join('\n');

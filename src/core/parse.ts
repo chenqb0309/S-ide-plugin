@@ -98,9 +98,10 @@ function parseClass(name: string, line: number, srcFile: string, body: Located[]
 
     if (t === '契約 {') {
       const b = readBlock(body, i);
+      // 契約的每一行就是一個連結：`類別名`（宣告「我需要這個協作者」）
       for (const l of b.body) {
-        const m = l.text.trim().match(/^使用\s+(\S+)\s+([^\s]+)$/);
-        if (m) fields.push({ type: m[1], name: m[2], dependency: true });
+        const m = l.text.trim().match(/^`([^`]+)`$/);
+        if (m) fields.push({ type: m[1], name: m[1], dependency: true });
       }
       i = b.next;
       continue;
@@ -147,7 +148,12 @@ export function normalize(text: string): string {
     .join('\n');
 }
 
-/** 取出所有 `[[類別.方法]]` 連結（含行號與欄位位置） */
+/**
+ * 取出所有反引號連結（含行號與欄位位置）。
+ *
+ * 用反引號而非 `[[...]]`：程式設計師對「反引號 = 識別字」已經有肌肉記憶，
+ * 寫在中文句子裡也讀得順（`` 呼叫 `庫存服務.檢查庫存` 並回傳結果 ``）。
+ */
 export interface LinkRef {
   raw: string;
   target: string;
@@ -158,9 +164,10 @@ export interface LinkRef {
 
 export function findLinks(relPath: string, src: string): LinkRef[] {
   const out: LinkRef[] = [];
-  const lines = src.split(/\r?\n/);
+  // 先去掉註解，否則註解裡的反引號會被當成連結
+  const lines = src.split(/\r?\n/).map(stripComment);
   for (let i = 0; i < lines.length; i += 1) {
-    const re = /\[\[([^\]\n]+)\]\]/g;
+    const re = /`([^`\n]+)`/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(lines[i])) !== null) {
       out.push({

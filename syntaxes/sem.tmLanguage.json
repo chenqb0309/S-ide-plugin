@@ -6,7 +6,6 @@
   "patterns": [
     { "include": "#comment" },
     { "include": "#link" },
-    { "include": "#modifier" },
     { "include": "#string" },
     { "include": "#number" },
     { "include": "#declaration" },
@@ -19,7 +18,7 @@
       "name": "comment.line.number-sign.sem"
     },
     "link": {
-      "match": "\\[\\[[^\\]\\n]+\\]\\]",
+      "match": "`[^`\\n]+`",
       "name": "markup.underline.link.sem"
     },
     "modifier": {
@@ -36,7 +35,7 @@
       "name": "constant.numeric.sem"
     },
     "declaration": {
-      "match": "(類別|方法|資料|契約|使用)",
+      "match": "(類別|方法|資料|契約)",
       "name": "keyword.declaration.sem"
     },
     "control": {

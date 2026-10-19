@@ -92,7 +92,13 @@ export function lint(files: SemFile[]): LintDiagnostic[] {
   return diags;
 }
 
-/** 檢查斷鏈。需要原始檔案內容，所以與 lint 分開。 */
+/**
+ * 檢查斷鏈。
+ *
+ * ⚠️ 這裡**不跳過任何連結**。之前的版本對「沒有 `.` 的目標」直接 `continue`，
+ * 造成靜默失敗——漏寫前綴不會有任何提示。連結是唯一的依賴宣告，
+ * 靜默等於規格殘缺，所以一律檢查、一律報錯。
+ */
 export function lintLinks(
   files: SemFile[],
   symbols: SymbolTable,
@@ -103,16 +109,13 @@ export function lintLinks(
     const src = reader(f.relPath);
     for (const link of findLinks(f.relPath, src)) {
       const t = link.target;
-      if (!t.includes('.')) continue;
-      const [head, ...rest] = t.split('.');
-      const member = rest.join('.');
-      const known = symbols.methods.has(`${head}.${member}`) || symbols.datas.has(head);
+      const known = symbols.methods.has(t) || symbols.classes.has(t) || symbols.datas.has(t);
       if (!known) {
         diags.push({
           relPath: f.relPath,
           line: link.line,
           severity: 'error',
-          message: `斷鏈：找不到 [[${t}]] 的目標。`,
+          message: `斷鏈：找不到 \`${t}\` 的目標。連結必須是 \`類別\` 或 \`類別.方法\`（類別名全域唯一，名稱需完全相符）。`,
         });
       }
     }
