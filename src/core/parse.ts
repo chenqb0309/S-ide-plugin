@@ -98,7 +98,7 @@ function parseClass(name: string, line: number, srcFile: string, body: Located[]
 
     if (t === 'requires {') {
       const b = readBlock(body, i);
-      // requires 的每一行就是一個連結：`類別名`（宣告「我需要這個協作者」）
+      // requires 的每一行就是一個連結：`class 名`（宣告「我需要這個協作者」）
       for (const l of b.body) {
         const m = l.text.trim().match(/^`([^`]+)`$/);
         if (m) fields.push({ type: m[1], name: m[1], dependency: true });

@@ -14,7 +14,7 @@ export function methodSignature(m: Method): string {
   return `${mapType(m.returns)} ${m.name}(${params})`;
 }
 
-// ── 契約文字（進簽章索引與 cache key） ──────────────────────────────────────
+// ── requires 文字（進簽章索引與 cache key） ──────────────────────────────────
 export const dtoContract = (d: DataDecl): string =>
   `data ${d.name} { ${d.fields.map((f) => `${f.type} ${f.name}`).join('; ')} }`;
 
@@ -96,7 +96,7 @@ export function genDto(d: DataDecl): string {
 }
 
 /**
- * `契約` → 真實欄位。
+ * `requires` → 真實欄位。
  *
  * 這一段是「基礎設施注入」的核心：`.sem` 只寫 `使用 稽核日誌 稽核`，
  * 欄位與實例由 harness 生成。AI 只能「使用」，不能「發明」——
@@ -115,7 +115,7 @@ export function genClassSkeleton(c: ClassDecl): string {
     '',
     `public partial class ${c.name}`,
     '{',
-    deps || '    // 契約為空',
+    deps || '    // 無 requires',
     '}',
     '',
   ].join('\n');
@@ -159,7 +159,7 @@ export function genProgramCs(files: SemFile[]): string {
       '// 由 S-IDE 生成。請勿手動編輯。',
       'Console.OutputEncoding = System.Text.Encoding.UTF8;',
       'Console.WriteLine("未定義進入點。請在 .sem 中宣告：");',
-      `Console.WriteLine("    類別 ${ENTRY_CLASS} { 方法 ${ENTRY_METHOD} { ... } }");`,
+      `Console.WriteLine("    class ${ENTRY_CLASS} { func ${ENTRY_METHOD} { ... } }");`,
       '',
     ].join('\n');
   }

@@ -54,7 +54,7 @@ export function deactivate(): void {
 
 // ── 語法高亮：由 TextMate grammar 負責（宣告檔，不寫程式） ─────────────────
 
-// ── `[[類別.方法]]` 可點擊 ─────────────────────────────────────────────────
+// ── `` `class.func` `` 可點擊 ────────────────────────────────────────────────
 function registerLinks(): vscode.Disposable {
   return vscode.languages.registerDocumentLinkProvider({ language: LANGUAGE_ID }, {
     provideDocumentLinks(doc) {

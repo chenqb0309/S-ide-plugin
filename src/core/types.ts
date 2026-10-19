@@ -3,7 +3,7 @@
 export interface Field {
   type: string;
   name: string;
-  /** 來自 `契約` 區的依賴宣告 */
+  /** 來自 `requires` 區的依賴宣告 */
   dependency?: boolean;
 }
 
@@ -53,7 +53,7 @@ export interface Unit {
   kind: UnitKind;
   /** 生成的檔名，例如 `PalletStacker.BoxesPerLayer.g.cs` */
   file: string;
-  /** 凍結契約的文字（簽章／型別／欄位） */
+  /** 簽章的文字（型別／欄位／參數） */
   contract: string;
   /** 實作描述的文字（僅 method 有） */
   body: string;

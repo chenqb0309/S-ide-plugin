@@ -77,7 +77,7 @@ function readme(): string {
     '|---|---|---|',
     '| `Generated/` | 由 `.sem` 生成的 C#。真實程式碼如同組合語言——你不必看 | **是**，刪掉會自動重建 |',
     '| `Prelude/` | 前導庫。由 harness 提供，AI 只能引用不能發明 | 由擴充套件覆寫 |',
-    '| `Program.cs` | 入口，由 `類別 App { 方法 Main { ... } }` 機械生成 | 是 |',
+    '| `Program.cs` | 入口，由 `class App { func Main { ... } }` 機械生成 | 是 |',
     '',
     `Prelude 版本：${PRELUDE_VERSION}`,
     '',

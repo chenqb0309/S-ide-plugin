@@ -21,10 +21,6 @@
       "match": "`[^`\\n]+`",
       "name": "markup.underline.link.sem"
     },
-    "modifier": {
-      "match": "【[^】\\n]+】",
-      "name": "storage.modifier.sem"
-    },
     "string": {
       "begin": "\"",
       "end": "\"",
@@ -35,15 +31,18 @@
       "name": "constant.numeric.sem"
     },
     "declaration": {
-      "match": "(class|func|data|requires|in|out)",
+      "comment": "框架詞彙一律英文。in/out 帶冒號才上色，避免在英文敘述裡誤判。",
+      "match": "\\b(class|func|data|requires)\\b|\\b(in|out)\\s*[:：]",
       "name": "keyword.declaration.sem"
     },
     "control": {
+      "comment": "敘述層的慣用標記，parser 不解析——保留中文。",
       "match": "(如果|否則如果|否則|每個|於|重複|當|返回|拋出|嘗試|捕捉|錯誤|等於|不等於|大於|小於)",
       "name": "keyword.control.sem"
     },
     "type": {
-      "match": "(字串|整數|長整數|小數|布林|日期|清單|可空|空)",
+      "comment": "框架詞彙一律英文。（list<T> 的 T 另外交給使用者自訂型別）",
+      "match": "\\b(str|int|long|decimal|double|float|bool|date|void|list|string|DateTime)\\b",
       "name": "storage.type.sem"
     }
   }

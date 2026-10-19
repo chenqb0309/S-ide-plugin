@@ -55,7 +55,7 @@ export class Translator {
 
   private mockBody(m: Method): string {
     const key = `${m.className}.${m.name}`;
-    // 允許用 `<檔名>.sem:<類別>.<方法>` 覆寫——多個樣本工作區都以 `程式.主` 為入口
+    // 允許用 `<檔名>.sem:<class>.<func>` 覆寫——多個樣本工作區都以 `App.Main` 為入口
     const scoped = `${m.srcFile}:${key}`;
     const body = MOCK_BODIES[scoped] ?? MOCK_BODIES[key];
     if (!body) throw new Error(`MOCK 模式沒有 ${scoped} 的罐頭回應`);
@@ -72,10 +72,10 @@ export class Translator {
 function systemPrompt(contextMap: string): string {
   return [
     '你是 S-IDE 語義編譯器。把結構化規格中的「方法實作描述」轉譯為 C#。',
-    '規格中的識別字（類別／方法／參數／欄位）已經是英文，直接沿用，不要改名。',
+    '規格中的識別字（class／func／參數／欄位）已經是英文，直接沿用，不要改名。',
     '',
     '【輸出格式】',
-    '1. 只輸出方法 body 的 C# 敘述。不要輸出 class、方法簽章、或外層大括號。',
+    '1. 只輸出 func body 的 C# 敘述。不要輸出 class、func 簽章、或外層大括號。',
     '2. 不要有任何 markdown 標記（```），不要有任何前後說明文字。',
     '',
     '【硬約束】',
@@ -85,7 +85,7 @@ function systemPrompt(contextMap: string): string {
     '',
     '【基礎設施注入】',
     '5. 規格中的每個 `步驟 "說明"`，在對應位置生成 Telemetry.Step("說明")。字串原文照抄，不要翻譯。',
-    '6. `requires` 宣告的協作者，harness 已經注入成欄位（欄位名 = 類別名）。',
+    '6. `requires` 宣告的協作者，harness 已經注入成欄位（欄位名 = class 名）。',
     '   直接使用它們，例如 `AuditLog.Write("...")`；**絕對不要自己 new**。',
     '',
     '【可用型別】',

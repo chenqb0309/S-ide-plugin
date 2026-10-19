@@ -83,7 +83,7 @@ export async function compile(opts: PipelineOptions): Promise<CompileResult> {
 
   const units = planUnits(files);
   const methodCount = units.filter((u) => u.kind === 'method').length;
-  log(`解析：${files.length} 個 .sem、${units.filter((u) => u.kind === 'dto').length} 資料、${units.filter((u) => u.kind === 'fields').length} 類別、${methodCount} 方法`);
+  log(`解析：${files.length} 個 .sem、${units.filter((u) => u.kind === 'dto').length} data、${units.filter((u) => u.kind === 'fields').length} class、${methodCount} func`);
 
   // ── scaffold（首次使用時偷偷建後台專案） ────────────────────────────────
   const sc = scaffold(opts.workspaceRoot, opts.extensionPath, files);
@@ -91,7 +91,7 @@ export async function compile(opts: PipelineOptions): Promise<CompileResult> {
   if (sc.copiedPrelude.length) log(`  🔧 更新 Prelude：${sc.copiedPrelude.join('、')}`);
 
   if (hasBlocking(diagnostics)) {
-    log('\n規格有阻斷性錯誤（類別重複／多載／斷鏈），不進入生成。');
+    log('\n規格有阻斷性錯誤（class 重複／多載／斷鏈），不進入生成。');
     return {
       ok: false,
       blocked: true,

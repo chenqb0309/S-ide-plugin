@@ -6,11 +6,11 @@ export const ENTRY_CLASS = 'App';
 export const ENTRY_METHOD = 'Main';
 
 export interface SymbolTable {
-  /** 類別名 → 定義所在的 .sem 相對路徑與行號（0-based） */
+  /** class 名 → 定義所在的 .sem 相對路徑與行號（0-based） */
   classes: Map<string, { relPath: string; line: number }>;
-  /** `類別.方法` → 定義位置 */
+  /** `class.func` → 定義位置 */
   methods: Map<string, { relPath: string; line: number }>;
-  /** 資料名 → 定義位置 */
+  /** data 名 → 定義位置 */
   datas: Map<string, { relPath: string; line: number }>;
 }
 
@@ -38,7 +38,7 @@ export function collectSymbols(files: SemFile[]): SymbolTable {
  * 規格 lint。
  *
  * 這裡實作的是「定址規則」（docs/01-sem-v0.md）：
- *   1. 類別名全域唯一
+ *   1. class 名全域唯一
  *   2. 禁止多載
  *   3. 連結必須指向存在的單元
  *
@@ -47,10 +47,10 @@ export function collectSymbols(files: SemFile[]): SymbolTable {
 export function lint(files: SemFile[]): LintDiagnostic[] {
   const diags: LintDiagnostic[] = [];
 
-  // 1. 類別／資料名全域唯一
+  // 1. class／data 名全域唯一
   for (const kind of ['classes', 'datas'] as const) {
     const seen = new Map<string, string>();
-    const label = kind === 'classes' ? '類別' : '資料';
+    const label = kind === 'classes' ? 'class' : 'data';
     for (const f of files) {
       for (const decl of f[kind]) {
         const prev = seen.get(decl.name);
@@ -59,7 +59,7 @@ export function lint(files: SemFile[]): LintDiagnostic[] {
             relPath: f.relPath,
             line: decl.line - 1,
             severity: 'error',
-            message: `${label}「${decl.name}」重複定義（已在 ${prev} 定義）。類別名必須全域唯一——這是 \`類別.方法\` 能被唯一定址的前提。若你開啟的資料夾含多個樣本，請改開單一樣本（例：samples/WarehouseShipping）。`,
+            message: `${label}「${decl.name}」重複定義（已在 ${prev} 定義）。${label} 名必須全域唯一——這是 \`class.func\` 能被唯一定址的前提。若你開啟的資料夾含多個樣本，請改開單一樣本（例：samples/WarehouseShipping）。`,
           });
         } else {
           seen.set(decl.name, f.relPath);
@@ -79,7 +79,7 @@ export function lint(files: SemFile[]): LintDiagnostic[] {
             relPath: f.relPath,
             line: m.line - 1,
             severity: 'error',
-            message: `方法「${c.name}.${m.name}」在同一類別重複宣告（第 ${prev} 行已有）。v0 禁止多載——否則 \`類別.方法\` 無法唯一定址。`,
+            message: `func「${c.name}.${m.name}」在同一個 class 重複宣告（第 ${prev} 行已有）。v0 禁止多載——否則 \`class.func\` 無法唯一定址。`,
           });
         } else {
           seen.set(m.name, m.line);
@@ -116,7 +116,7 @@ export function lintLinks(
           relPath: f.relPath,
           line: link.line,
           severity: 'error',
-          message: `斷鏈：找不到 \`${t}\` 的目標。連結必須是 \`類別\` 或 \`類別.方法\`（類別名全域唯一，名稱需完全相符）。`,
+          message: `斷鏈：找不到 \`${t}\` 的目標。連結必須是 \`class\` 或 \`class.func\`（class 名全域唯一，名稱需完全相符）。`,
         });
       }
     }
@@ -220,20 +220,33 @@ export function lintStaleSyntax(files: SemFile[], reader: (relPath: string) => s
     [/^\s*輸入\s*[:：]/, '輸入'],
     [/^\s*輸出\s*[:：]/, '輸出'],
   ];
+  // 宣告的左大括號必須在行末。單行寫法（`func A { }`）在 v0 一個字都抓不到，
+  // 方法會整條消失——這正是最貴的那種錯，所以也當場報錯。
+  const INLINE: [RegExp, string][] = [
+    [/^\s*(class|func|data)\s+\S+\s*\{.+$/, '宣告'],
+    [/^\s*requires\s*\{.+$/, 'requires'],
+  ];
 
   for (const f of files) {
     const lines = reader(f.relPath).split(/\r?\n/);
     for (let i = 0; i < lines.length; i += 1) {
+      let hit: string | null = null;
       for (const [re, word] of STALE) {
-        if (!re.test(lines[i])) continue;
-        diags.push({
-          relPath: f.relPath,
-          line: i,
-          severity: 'error',
-          message: `「${word}」是舊的寫法。v0 框架詞彙已全面改為英文：class／func／data／requires／in:／out:。用舊寫法會整條解析不到，不會有任何提示。`,
-        });
-        break;
+        if (re.test(lines[i])) {
+          hit = `「${word}」是舊的寫法。v0 框架詞彙已全面改為英文：class／func／data／requires／in:／out:。用舊寫法會整條解析不到，不會有任何提示。`;
+          break;
+        }
       }
+      if (!hit) {
+        for (const [re] of INLINE) {
+          if (re.test(lines[i])) {
+            hit =
+              '宣告的左大括號必須在行末。`func A { }` 這種單行寫法在 v0 不會被解析，整條內容會消失。請寫成多行：`func A {` … `}`。';
+            break;
+          }
+        }
+      }
+      if (hit) diags.push({ relPath: f.relPath, line: i, severity: 'error', message: hit });
     }
   }
   return diags;
