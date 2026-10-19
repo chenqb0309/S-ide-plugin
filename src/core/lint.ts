@@ -58,7 +58,7 @@ export function lint(files: SemFile[]): LintDiagnostic[] {
             relPath: f.relPath,
             line: decl.line - 1,
             severity: 'error',
-            message: `${label}「${decl.name}」重複定義（已在 ${prev} 定義）。類別名必須全域唯一——這是 [[類別.方法]] 能被唯一定址的前提。`,
+            message: `${label}「${decl.name}」重複定義（已在 ${prev} 定義）。類別名必須全域唯一——這是 \`類別.方法\` 能被唯一定址的前提。若你開啟的資料夾含多個樣本，請改開單一樣本（例：samples/倉儲出貨）。`,
           });
         } else {
           seen.set(decl.name, f.relPath);

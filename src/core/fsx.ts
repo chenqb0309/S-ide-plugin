@@ -64,7 +64,7 @@ export function listFiles(dir: string, filter: (name: string) => boolean): strin
     .map((e) => e.name);
 }
 
-const SKIP_DIRS = new Set(['node_modules', '.git', 'out', 'bin', 'obj', '.semantic_backend', '.vscode-test', 'samples']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'out', 'bin', 'obj', '.semantic_backend', '.vscode-test']);
 
 /** 遞迴掃描 workspace 內的 .sem（相對路徑） */
 export function scanSemFiles(workspaceRoot: string): string[] {

@@ -49,6 +49,24 @@ export async function compile(opts: PipelineOptions): Promise<CompileResult> {
   const log = opts.log;
   const files = readSpecs(opts);
 
+  // 掃不到任何 .sem 是靜默失敗的溫床（連結、診斷會全部消失），所以講清楚。
+  if (files.length === 0) {
+    log(`找不到任何 .sem（掃描根目錄：${opts.workspaceRoot}）`);
+    log('提示：samples/ 底下每個樣本都是獨立工作區。');
+    log('     請把工作區開在樣本資料夾（例：samples/倉儲出貨），不要開 repo 根目錄。');
+    return {
+      ok: false,
+      blocked: true,
+      diagnostics: [],
+      units: [],
+      regenerated: [],
+      reused: 0,
+      orphans: [],
+      manifest: null,
+      errors: ['找不到任何 .sem'],
+    };
+  }
+
   // ── lint（免費的第一層驗證，不需要編譯器） ──────────────────────────────
   const symbols = collectSymbols(files);
   const diagnostics: LintDiagnostic[] = [
