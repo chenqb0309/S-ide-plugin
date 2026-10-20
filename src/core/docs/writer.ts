@@ -53,8 +53,8 @@ export async function writeProse(
       const missing: ProseItem[] = [];
 
       for (const item of batch) {
-        const clean = String(data[item.id] ?? '').replace(/\s+/g, ' ').trim();
-        if (clean) prose.set(item.id, clean);
+        const value = normalizeValue(data[item.id]);
+        if (value) prose.set(item.id, value);
         else missing.push(item);
       }
 
@@ -105,7 +105,7 @@ export async function writeProse(
 }
 
 interface CallResult {
-  data: Record<string, string>;
+  data: Record<string, string | string[]>;
   raw: string;
   /** 給 log 用的一行摘要：finish_reason + usage */
   meta: string;
@@ -129,18 +129,25 @@ async function callOnce(cfg: DocAiConfig, batch: readonly ProseItem[]): Promise<
         {
           role: 'system',
           content: [
-            '你是資深工程師，負責把 C# 程式碼濃縮成一句「業務上在做什麼」。',
+            '你是資深工程師，把 C# 濃縮成「人類看得懂的偽代碼」。',
+            '',
+            '【形狀】',
+            'A. 有邏輯的方法 → 輸出字串陣列，每項是一個步驟（最多 7 步）。',
+            '   依執行順序排列；條件、計算、提早返回、寫入、丟例外都要寫成一步。',
+            'B. 只有單一動作（getter、單純轉發）→ 輸出一句話字串。',
+            'C. property → 一句話說明它的業務意義，不要寫「取得或設定」。',
             '',
             '【規則】',
-            '1. 每個 id 輸出一句繁體中文，40 字以內。',
-            '2. 只描述業務意圖與關鍵條件，不要描述語法（不要說「使用 foreach」「宣告變數」）。',
-            '3. 不要提到 class 名稱，看的人已經在該區塊裡了。',
-            '4. 純查詢/取值就直說「取得 X」；有分支就寫出條件。',
+            '1. 繁體中文，每個步驟 40 字以內。',
+            '2. 必須寫出具體門檻、數量、比例（例如「滿 1000 元免運」）。',
+            '3. 不要描述語法（if/foreach/變數宣告），要寫業務行為。',
+            '4. 不要重述參數與回傳型別，不要提 class 名稱。',
+            '5. 只寫程式碼裡確實存在的規則，不要推測、不要補充。',
+            '6. 不要 markdown 標記、不要編號前綴（1. 2.），系統會自己加。',
             '',
             '【輸出】',
-            '只輸出 JSON 物件，鍵是 id、值是句子。不要 markdown、不要解釋、不要空值。',
-            '必須包含輸入裡的每一個 id。',
-            '格式：{"id":"說明"}',
+            '只輸出 JSON 物件，鍵是 id，值是字串或字串陣列。必須包含每一個 id。',
+            '格式：{"id":"一句話"} 或 {"id":["步驟一","步驟二"]}',
           ].join('\n'),
         },
         { role: 'user', content: JSON.stringify(payload) },
@@ -177,11 +184,11 @@ async function callOnce(cfg: DocAiConfig, batch: readonly ProseItem[]): Promise<
 
 /**
  * 模型不一定會乖乖給 `{id: text}`。這裡容忍三種常見變形：
- *   - 物件：{"id":"說明"}
+ *   - 物件：{"id":"說明"} 或 {"id":["步驟一","步驟二"]}
  *   - 陣列：[{"id":"...","text":"..."}]
  *   - 包一層：{"items":[...]} / {"data":[...]} / {"result":{...}}
  */
-function parseProse(text: string): Record<string, string> {
+function parseProse(text: string): Record<string, string | string[]> {
   const start = text.indexOf('{');
   const arrStart = text.indexOf('[');
   const from = start < 0 ? arrStart : arrStart < 0 ? start : Math.min(start, arrStart);
@@ -198,7 +205,7 @@ function parseProse(text: string): Record<string, string> {
     return {};
   }
 
-  const out: Record<string, string> = {};
+  const out: Record<string, string | string[]> = {};
 
   const take = (value: unknown): void => {
     if (!value || typeof value !== 'object') return;
@@ -208,19 +215,37 @@ function parseProse(text: string): Record<string, string> {
     }
     const record = value as Record<string, unknown>;
     const id = record.id ?? record.key ?? record.name;
-    const text = record.text ?? record.value ?? record.prose ?? record.description ?? record.summary;
-    if (typeof id === 'string' && (typeof text === 'string' || typeof text === 'number')) {
-      out[id] = String(text);
-      return;
+    const value2 =
+      record.steps ?? record.text ?? record.value ?? record.prose ?? record.description ?? record.summary;
+    if (typeof id === 'string') {
+      const normalized = normalizeValue(value2);
+      if (normalized) {
+        out[id] = normalized;
+        return;
+      }
     }
     for (const key of ['items', 'data', 'result', 'results', 'nodes']) {
       if (key in record) take(record[key]);
     }
     for (const [key, text] of Object.entries(record)) {
-      if (typeof text === 'string' || typeof text === 'number') out[key] = String(text);
+      const normalized = normalizeValue(text);
+      if (normalized) out[key] = normalized;
     }
   };
 
   take(parsed);
   return out;
+}
+
+/** 把任意形狀壓成「字串」或「字串陣列」；空的回 undefined。 */
+function normalizeValue(value: unknown): string | string[] | undefined {
+  if (Array.isArray(value)) {
+    const steps = value.map((v) => String(v ?? '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+    return steps.length ? steps : undefined;
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const text = String(value).replace(/\s+/g, ' ').trim();
+    return text || undefined;
+  }
+  return undefined;
 }

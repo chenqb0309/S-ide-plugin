@@ -265,32 +265,46 @@ async function writeOne(
   const needs: core.docs.MemberDoc[] = [];
   for (const cls of fileDoc.classes) {
     for (const member of cls.members) {
-      const old = oldBlocks.get(member.id);
-      const hasProse = old ? /^>\s+\S/m.test(old) : false;
-      const mustWrite = changed.has(member.id) || !old || !hasProse;
+      const old = oldBlocks.get(member.anchor);
+      const mustWrite = changed.has(member.id) || !old || !core.docs.hasProse(old);
       if (mustWrite) needs.push(member);
     }
   }
 
-  const currentIds = new Set<string>();
-  for (const cls of fileDoc.classes) for (const m of cls.members) currentIds.add(m.id);
+  const currentAnchors = new Set<string>();
+  for (const cls of fileDoc.classes) for (const m of cls.members) currentAnchors.add(m.anchor);
   const currentClasses = fileDoc.classes.map((c) => c.name);
   const oldClasses = core.docs.classesIn(oldText);
   const classChanged =
     currentClasses.length !== oldClasses.length || currentClasses.some((name) => !oldClasses.includes(name));
   const structureChanged =
-    classChanged || currentIds.size !== oldBlocks.size || [...currentIds].some((id) => !oldBlocks.has(id));
+    classChanged || currentAnchors.size !== oldBlocks.size || [...currentAnchors].some((a) => !oldBlocks.has(a));
 
   if (!needs.length && oldText && !structureChanged) return undefined;
 
   // 呼叫鏈：只對要重寫的節點問（CallHierarchy 是 round-trip，很貴）
   const calls = new Map<string, core.docs.CallLink[]>();
+  let linked = 0;
+  let failed = 0;
   for (const member of needs) {
-    const links = await outgoingLinks(root, fileDoc.relCs, member, index);
-    if (links.length) calls.set(member.id, links);
+    const result = await outgoingLinks(root, fileDoc.relCs, member, index);
+    if (result.state === 'ok') {
+      linked += 1;
+      calls.set(member.id, result.links);
+    } else {
+      failed += 1;
+    }
+  }
+  if (needs.length && linked === 0) {
+    log(
+      deps,
+      `  ⚠️  ${fileDoc.relCs}：${needs.length} 個節點都拿不到呼叫鏈（prepare/outgoing 皆空）——語言伺服器可能不支援`,
+    );
+  } else if (failed) {
+    log(deps, `  ⚠️  ${fileDoc.relCs}：${failed}/${needs.length} 個節點沒有呼叫鏈`);
   }
 
-  let prose = new Map<string, string>();
+  let prose: core.docs.ProseMap = new Map();
   if (needs.length) {
     const items = needs.map((m) => ({ id: m.id, signature: m.signature, code: m.code }));
     const result = await core.docs.writeProse(ai, items, (line) => log(deps, line));
@@ -303,13 +317,12 @@ async function writeOne(
 
   const classes = fileDoc.classes.map((cls) => ({
     name: cls.name,
-    anchor: cls.anchor,
     blocks: cls.members.map((member) => {
-      const old = oldBlocks.get(member.id);
-      if (old && !changed.has(member.id) && /^>\s+\S/m.test(old)) return old;
+      const old = oldBlocks.get(member.anchor);
+      if (old && !changed.has(member.id) && core.docs.hasProse(old)) return old;
 
-      // 名稱/簽章沒變但呼叫鏈可能變了：必要時只換連結行
-      const text = core.docs.renderMember(member, prose.get(member.id) ?? legacyProse(old), calls.get(member.id) ?? []);
+      // 有變動但這次拿不到說明時，寧可留白（會被回報），也不要沿用舊的可能已錯的敘述
+      const text = core.docs.renderMember(member, prose.get(member.id), calls.get(member.id) ?? [], fileDoc.relMd);
       return text;
     }),
   }));
@@ -318,13 +331,6 @@ async function writeOne(
   if (next === oldText) return undefined;
 
   return { abs: mdAbs, text: next, relMd: fileDoc.relMd };
-}
-
-/** 重寫時若 AI 沒回話，沿用舊區塊裡的說明，不要把它刪掉。 */
-function legacyProse(old: string | undefined): string {
-  if (!old) return '';
-  const m = /^>\s+(.+)$/m.exec(old);
-  return m ? m[1].trim() : '';
 }
 
 function removeDoc(docsRoot: string, relDocsDir: string, relCs: string): void {
@@ -347,7 +353,6 @@ const MEMBER_KINDS = new Set<vscode.SymbolKind>([
   vscode.SymbolKind.Method,
   vscode.SymbolKind.Constructor,
   vscode.SymbolKind.Property,
-  vscode.SymbolKind.Field,
 ]);
 
 class SymbolIndex {
@@ -382,14 +387,17 @@ class SymbolIndex {
     return doc;
   }
 
-  /** 由「檔案 + 行號」回推節點 id——比對呼叫目標時用，不依賴 detail 字串。 */
-  async idAt(absPath: string, line: number): Promise<{ id: string; label: string } | undefined> {
+  /** 由「檔案 + 行號」回推節點——比對呼叫目標時用，不依賴 detail 字串。 */
+  async idAt(
+    absPath: string,
+    line: number,
+  ): Promise<{ id: string; label: string; relMd: string; anchor: string } | undefined> {
     const fileDoc = await this.get(absPath);
     if (!fileDoc) return undefined;
     for (const cls of fileDoc.classes) {
       for (const member of cls.members) {
         if (line >= member.startLine && line <= member.endLine) {
-          return { id: member.id, label: `${cls.name}.${member.name}` };
+          return { id: member.id, label: `${cls.name}.${member.name}`, relMd: fileDoc.relMd, anchor: member.anchor };
         }
       }
     }
@@ -404,18 +412,32 @@ function toFileDoc(
   symbols: readonly vscode.DocumentSymbol[],
 ): core.docs.FileDoc {
   const classes: core.docs.ClassDoc[] = [];
+  const usedAnchors = new Set<string>();
 
-  const visit = (symbol: vscode.DocumentSymbol): void => {
-    if (CLASS_KINDS.has(symbol.kind)) {
+  const visit = (symbol: vscode.DocumentSymbol, outer: string[]): void => {
+    const isType = CLASS_KINDS.has(symbol.kind);
+    const path = isType ? [...outer, symbol.name] : outer;
+
+    if (isType) {
       const members: core.docs.MemberDoc[] = [];
       for (const child of symbol.children ?? []) {
+        // field 是實作細節（_context、_dbSet），不是業務節點
         if (!MEMBER_KINDS.has(child.kind)) continue;
-        const detail = child.detail || child.name;
+
+        const raw = child.detail || child.name;
+        const bare = bareName(raw);
+        // C# 有時把建構子回報成 Method，名字會等於 class 名
+        const isCtor = child.kind === vscode.SymbolKind.Constructor || bare === symbol.name;
+        const name = isCtor ? 'ctor' : bare;
+        const { heading, anchor } = core.docs.uniqueHeading(name, usedAnchors);
+
         members.push({
-          id: core.docs.memberId(symbol.name, child.name, core.docs.paramTypesOf(child.detail)),
-          kind: child.kind === vscode.SymbolKind.Property || child.kind === vscode.SymbolKind.Field ? 'property' : 'method',
-          name: child.name,
-          signature: detail,
+          id: core.docs.memberId(path.join('.'), name, core.docs.paramTypesOf(raw)),
+          heading,
+          anchor,
+          kind: child.kind === vscode.SymbolKind.Property ? 'property' : 'method',
+          name,
+          signature: raw,
           startLine: child.range.start.line,
           endLine: child.range.end.line,
           code: doc.getText(child.range),
@@ -424,19 +446,25 @@ function toFileDoc(
       members.sort((a, b) => a.startLine - b.startLine);
       classes.push({
         name: symbol.name,
-        anchor: core.docs.classAnchor(symbol.name),
+        anchor: core.docs.classAnchor(path.join('.')),
         startLine: symbol.range.start.line,
         endLine: symbol.range.end.line,
         members,
       });
     }
 
-    for (const child of symbol.children ?? []) visit(child);
+    for (const child of symbol.children ?? []) visit(child, path);
   };
 
-  for (const symbol of symbols) visit(symbol);
+  for (const symbol of symbols) visit(symbol, []);
   classes.sort((a, b) => a.startLine - b.startLine);
   return { relCs, relMd, classes };
+}
+
+/** `Foo(int) : void` → `Foo`；`Name : string` → `Name` */
+function bareName(raw: string): string {
+  const noParams = raw.split('(')[0];
+  return noParams.split(' : ')[0].trim() || raw.trim();
 }
 
 /** 對一個節點問 VS Code 的 CallHierarchy，拿它呼叫了誰。 */
@@ -445,31 +473,31 @@ async function outgoingLinks(
   relCs: string,
   member: core.docs.MemberDoc,
   index: SymbolIndex,
-): Promise<core.docs.CallLink[]> {
+): Promise<{ state: 'ok' | 'empty' | 'error'; links: core.docs.CallLink[] }> {
   try {
     const uri = vscode.Uri.file(path.join(root, relCs));
     const position = namePosition(member);
     const items = await vscode.commands.executeCommand<vscode.CallHierarchyItem[]>(
-      'vscode.executeCallHierarchyProvider',
+      'vscode.prepareCallHierarchy',
       uri,
       position,
     );
-    if (!items?.length) return [];
+    if (!items?.length) return { state: 'empty', links: [] };
 
     const calls = await vscode.commands.executeCommand<vscode.CallHierarchyOutgoingCall[]>(
       'vscode.provideOutgoingCalls',
       items[0],
     );
-    if (!calls?.length) return [];
+    if (!calls?.length) return { state: 'empty', links: [] };
 
     const links: core.docs.CallLink[] = [];
     for (const call of calls) {
       const target = await index.idAt(call.to.uri.fsPath, call.to.range.start.line);
-      if (target) links.push({ id: target.id, label: target.label });
+      if (target) links.push({ id: target.id, label: target.label, relMd: target.relMd, anchor: target.anchor });
     }
-    return links;
+    return { state: 'ok', links };
   } catch {
-    return [];
+    return { state: 'error', links: [] };
   }
 }
 

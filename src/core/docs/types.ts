@@ -2,8 +2,12 @@ export type MemberKind = 'method' | 'property';
 
 /** 一個可獨立重寫的語義節點（＝文件中的一個區塊）。 */
 export interface MemberDoc {
-  /** 穩定 anchor id，例如 shippingservice-calculatefee-order */
+  /** 穩定識別碼，用來比對「是不是同一個節點」（不是 Markdown anchor） */
   id: string;
+  /** 文件上的標題文字（可能帶 ` (2)` 以確保檔內唯一） */
+  heading: string;
+  /** 由 heading 推導的 Markdown anchor；連到這個節點時用它 */
+  anchor: string;
   kind: MemberKind;
   name: string;
   /** 給人看的簽章，例如 decimal CalculateFee(Order order) */
@@ -33,5 +37,5 @@ export interface FileDoc {
   classes: ClassDoc[];
 }
 
-/** AI 回傳的一句話說明，以 id 為鍵。 */
-export type ProseMap = Map<string, string>;
+/** AI 回傳的說明：字串＝一句摘要；陣列＝編號步驟，以 id 為鍵。 */
+export type ProseMap = Map<string, string | string[]>;
