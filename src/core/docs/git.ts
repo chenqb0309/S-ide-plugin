@@ -23,12 +23,15 @@ export function isGitRepo(root: string): boolean {
   return run(root, ['rev-parse', '--is-inside-work-tree']).out.trim() === 'true';
 }
 
-/**
- * 最後一次動到 docs 目錄的 commit。
- * 這就是「上次同步」的基準點——不用另外存狀態檔。
- */
+/** 最後一次動到 docs 目錄的 commit。空字串＝還沒同步過。 */
 export function baselineCommit(root: string, relDocsDir: string): string {
   const r = run(root, ['log', '-1', '--format=%H', '--', relDocsDir]);
+  return r.ok ? r.out.trim() : '';
+}
+
+/** HEAD 的 sha。空字串＝這個 repo 連一個 commit 都沒有。 */
+export function headCommit(root: string): string {
+  const r = run(root, ['rev-parse', '--verify', 'HEAD']);
   return r.ok ? r.out.trim() : '';
 }
 
@@ -56,6 +59,30 @@ export function statusChanges(root: string): GitChange[] {
 }
 
 /**
+ * 相對 baseline 的檔案層級變動（含已 commit 的）。
+ * 這是 `git status` 的補集：commit 過的東西 status 看不到，但 diff 看得到。
+ */
+export function diffNameStatus(root: string, baseline: string): GitChange[] {
+  const r = run(root, ['diff', '--name-status', '-M', baseline, '--', '*.cs']);
+  if (!r.ok) return [];
+
+  const out: GitChange[] = [];
+  for (const line of r.out.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const parts = line.split('\t');
+    const status = parts[0].trim();
+    if (parts.length >= 3) {
+      // rename / copy：舊路徑視為刪除，新路徑視為新增
+      out.push({ status: 'D', rel: parts[1].replace(/\\/g, '/') });
+      out.push({ status: 'A', rel: parts[2].replace(/\\/g, '/') });
+      continue;
+    }
+    if (parts.length === 2) out.push({ status, rel: parts[1].replace(/\\/g, '/') });
+  }
+  return out;
+}
+
+/**
  * 某個檔案相對 baseline 的變動行範圍（1-based，含頭含尾）。
  * 只看新檔（`+` 側）：那是「現在」的行號，才能跟 symbol range 對上。
  */
@@ -73,6 +100,12 @@ export function changedLineRanges(root: string, baseline: string, relFile: strin
     ranges.push([start, start + count - 1]);
   }
   return ranges;
+}
+
+/** 目錄底下有沒有任何檔案被 git 追蹤。用來判斷 semDocs 是否已納入版控。 */
+export function isDirTracked(root: string, relDir: string): boolean {
+  const r = run(root, ['ls-files', '--', relDir]);
+  return r.ok && r.out.trim().length > 0;
 }
 
 export function isTracked(root: string, relFile: string): boolean {

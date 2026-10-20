@@ -32,12 +32,12 @@ export function decide(input: DecideInput): Decision {
     return { mode: 'full', reason: `文件模板版本 ${input.markerVersion} ≠ ${DOC_VERSION}，全量重建` };
   }
   if (!input.hasGit) return { mode: 'full', reason: '此專案不是 git repo，無法比對變動，全量重建' };
-  if (!input.baseline) return { mode: 'full', reason: 'semDocs 尚未 commit 過，沒有比較基準，全量重建' };
+  if (!input.baseline) return { mode: 'full', reason: '此 repo 還沒有任何 commit，無從比較，全量重建' };
 
-  const touched = touchedSources(input.changes, input.relDocsDir);
-  if (!touched.length) return { mode: 'none', reason: '自上次同步以來沒有任何 .cs 變動' };
+  const touched = new Set(touchedSources(input.changes, input.relDocsDir).map((c) => c.rel));
+  if (!touched.size) return { mode: 'none', reason: '自上次同步以來沒有任何 .cs 變動' };
 
-  return { mode: 'incremental', reason: `${touched.length} 個 .cs 有變動` };
+  return { mode: 'incremental', reason: `${touched.size} 個 .cs 有變動` };
 }
 
 /** 只留 .cs，且排除 docs 目錄自己。 */

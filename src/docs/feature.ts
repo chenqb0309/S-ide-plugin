@@ -29,7 +29,6 @@ interface RunStats {
   files: number;
   rewritten: number;
   removed: number;
-  aiCalls: number;
 }
 
 let running = false;
@@ -92,8 +91,14 @@ async function runSync(
 
   const hasGit = core.docs.isGitRepo(root);
   const marker = core.docs.readMarker(docsRoot);
-  const baseline = hasGit ? core.docs.baselineCommit(root, relDocsDir) : '';
+  // baseline：優先用「上次同步」那個 commit；還沒同步過就用 HEAD。
+  // 兩者都沒有（連一個 commit 都沒有）才退回全量。
+  const semDocsCommit = hasGit ? core.docs.baselineCommit(root, relDocsDir) : '';
+  const head = hasGit ? core.docs.headCommit(root) : '';
+  const baseline = semDocsCommit || head;
   const changes = hasGit ? core.docs.statusChanges(root) : [];
+  // 已 commit 的改動 status 看不到，要另外從 diff 補。
+  const diffed = baseline ? core.docs.diffNameStatus(root, baseline) : [];
 
   const decision = forced === 'full'
     ? { mode: 'full' as const, reason: '使用者要求全量重建' }
@@ -102,7 +107,7 @@ async function runSync(
         hasMarker: marker !== null,
         markerVersion: marker?.version ?? 0,
         baseline,
-        changes,
+        changes: [...changes, ...diffed],
         relDocsDir,
       });
 
@@ -110,7 +115,7 @@ async function runSync(
 
   if (decision.mode === 'none') {
     void vscode.window.showInformationMessage('S-IDE：語義文件已同步，沒有需要更新的地方。');
-    return { mode: 'none', reason: decision.reason, files: 0, rewritten: 0, removed: 0, aiCalls: 0 };
+    return { mode: 'none', reason: decision.reason, files: 0, rewritten: 0, removed: 0 };
   }
 
   const stats: RunStats = {
@@ -119,11 +124,12 @@ async function runSync(
     files: 0,
     rewritten: 0,
     removed: 0,
-    aiCalls: 0,
   };
 
   // 決定要處理哪些檔案
   const targets = new Map<string, 'full' | 'diff'>();
+  /** 延後到全部算完才刪，避免中途失敗留下半套 */
+  const deletes: string[] = [];
   if (decision.mode === 'full') {
     // 有 git 就讓 .gitignore 決定範圍；沒有 git 才退回檔案系統掃描
     const all = hasGit ? core.docs.listCsFiles(root) : core.scanCsFiles(root, [relDocsDir]);
@@ -132,22 +138,44 @@ async function runSync(
       targets.set(rel, 'full');
     }
   } else {
+    // 兩個來源取聯集：
+    //   status → 未 commit 的改動（含未追蹤）
+    //   diff   → 已 commit、但文件還沒跟上的改動
+    const planned = new Map<string, 'full' | 'diff' | 'delete'>();
+
     for (const change of core.docs.touchedSources(changes, relDocsDir)) {
-      if (core.docs.isDeletion(change)) {
-        removeDoc(docsRoot, relDocsDir, change.rel);
-        stats.removed += 1;
-        continue;
+      if (core.docs.isDeletion(change)) planned.set(change.rel, 'delete');
+      else if (core.docs.isUntracked(change)) planned.set(change.rel, 'full');
+      else planned.set(change.rel, 'diff');
+    }
+
+    if (baseline) {
+      const prefix = relDocsDir.replace(/\/+$/, '').toLowerCase() + '/';
+      for (const entry of diffed) {
+        if (!entry.rel.toLowerCase().endsWith('.cs')) continue;
+        if (entry.rel.toLowerCase().startsWith(prefix)) continue;
+        if (entry.status.startsWith('D')) planned.set(entry.rel, 'delete');
+        else if (!planned.has(entry.rel)) planned.set(entry.rel, 'diff');
       }
-      // 未追蹤檔對 diff 隱形，只能整檔重建；其餘看 hunk
-      targets.set(change.rel, core.docs.isUntracked(change) ? 'full' : 'diff');
+    }
+
+    for (const [rel, kind] of planned) {
+      if (kind === 'delete') {
+        deletes.push(rel);
+        stats.removed += 1;
+      } else {
+        targets.set(rel, kind);
+      }
     }
   }
 
-  if (!targets.size) {
+  if (!targets.size && !deletes.length) {
     return stats;
   }
 
   const index = new SymbolIndex(root, relDocsDir);
+  const pending: Array<{ abs: string; text: string; relMd: string }> = [];
+  const missingProse: string[] = [];
 
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'S-IDE：同步語義文件', cancellable: true },
@@ -174,17 +202,47 @@ async function runSync(
           }
         }
 
-        const wrote = await writeOne(deps, root, docsRoot, relDocsDir, fileDoc, changed, how, ai, index, stats);
-        if (wrote) stats.rewritten += 1;
+        const out = await writeOne(deps, root, docsRoot, relDocsDir, fileDoc, changed, ai, index, missingProse);
+        if (out) {
+          pending.push(out);
+          stats.rewritten += 1;
+        }
         stats.files += 1;
         done += 1;
       }
-      if (done === 0) log(deps, '  沒有任何檔案被處理');
+      if (done === 0 && targets.size) log(deps, '  沒有任何檔案被處理');
     },
   );
 
+  // 全部算完才落地：中途失敗不會留下半套文件。
+  for (const rel of deletes) {
+    removeDoc(docsRoot, relDocsDir, rel);
+    log(deps, `  🗑️  ${core.docs.mdRelPath(rel, relDocsDir)}`);
+  }
+  for (const item of pending) {
+    core.writeText(item.abs, item.text);
+    log(deps, `  ✏️  ${item.relMd}`);
+  }
+
   core.docs.writeIndex(docsRoot);
   if (!core.docs.readMarker(docsRoot)) core.docs.writeMarker(docsRoot);
+
+  // 這是一個會靜默漏改動的坑：semDocs 還沒 commit 時，baseline 只能退到 HEAD；
+  // 一旦使用者先 commit 了 code，那個改動就從 diff 消失了。先講清楚。
+  if (hasGit && !core.docs.isDirTracked(root, relDocsDir)) {
+    log(deps, '');
+    log(deps, `⚠️  ${relDocsDir}/ 還沒納入版控。`);
+    log(deps, '    目前 baseline 會退到 HEAD；若你先 commit code 再同步，那次改動會被漏掉。');
+    log(deps, `    建議現在 commit 一次 ${relDocsDir}/，之後增量才會穩定。`);
+  }
+
+  if (missingProse.length) {
+    log(deps, '');
+    log(deps, `⚠️  ${missingProse.length} 個節點沒有說明（結構仍然正確，下次同步會補）：`);
+    for (const id of missingProse.slice(0, 10)) log(deps, `    - ${id}`);
+    if (missingProse.length > 10) log(deps, `    …其餘 ${missingProse.length - 10} 個`);
+  }
+
   return stats;
 }
 
@@ -195,11 +253,10 @@ async function writeOne(
   relDocsDir: string,
   fileDoc: core.docs.FileDoc,
   changed: Set<string>,
-  how: 'full' | 'diff',
   ai: core.docs.DocAiConfig,
   index: SymbolIndex,
-  stats: RunStats,
-): Promise<boolean> {
+  missingProse: string[],
+): Promise<{ abs: string; text: string; relMd: string } | undefined> {
   const mdAbs = path.join(root, fileDoc.relMd);
   const oldText = core.exists(mdAbs) ? core.readText(mdAbs) : '';
   const oldBlocks = core.docs.parseBlocks(oldText);
@@ -224,7 +281,7 @@ async function writeOne(
   const structureChanged =
     classChanged || currentIds.size !== oldBlocks.size || [...currentIds].some((id) => !oldBlocks.has(id));
 
-  if (!needs.length && oldText && !structureChanged) return false;
+  if (!needs.length && oldText && !structureChanged) return undefined;
 
   // 呼叫鏈：只對要重寫的節點問（CallHierarchy 是 round-trip，很貴）
   const calls = new Map<string, core.docs.CallLink[]>();
@@ -236,8 +293,12 @@ async function writeOne(
   let prose = new Map<string, string>();
   if (needs.length) {
     const items = needs.map((m) => ({ id: m.id, signature: m.signature, code: m.code }));
-    prose = await core.docs.writeProse(ai, items);
-    stats.aiCalls += items.length ? 1 : 0;
+    const result = await core.docs.writeProse(ai, items, (line) => log(deps, line));
+    prose = result.prose;
+    if (result.failed.length) {
+      log(deps, `  ⚠️  ${fileDoc.relMd}：${result.failed.length}/${items.length} 個節點沒有說明（下次同步會補）`);
+      for (const id of result.failed) missingProse.push(id);
+    }
   }
 
   const classes = fileDoc.classes.map((cls) => ({
@@ -254,11 +315,9 @@ async function writeOne(
   }));
 
   const next = core.docs.renderFile(fileDoc.relCs, classes);
-  if (next === oldText) return false;
+  if (next === oldText) return undefined;
 
-  core.writeText(mdAbs, next);
-  log(deps, `  ✏️  ${fileDoc.relMd}`);
-  return true;
+  return { abs: mdAbs, text: next, relMd: fileDoc.relMd };
 }
 
 /** 重寫時若 AI 沒回話，沿用舊區塊裡的說明，不要把它刪掉。 */

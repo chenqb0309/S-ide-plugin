@@ -17,14 +17,17 @@ export {
 export {
   isGitRepo,
   baselineCommit,
+  headCommit,
   statusChanges,
+  diffNameStatus,
   changedLineRanges,
   isTracked,
+  isDirTracked,
   listCsFiles,
   type GitChange,
 } from './git';
 export { decide, touchedSources, isDeletion, isUntracked, changedMemberIds, type SyncMode, type Decision } from './plan';
-export { writeProse, type DocAiConfig, type ProseItem } from './writer';
+export { writeProse, type DocAiConfig, type ProseItem, type ProseResult } from './writer';
 export {
   DOCS_DIR_DEFAULT,
   markerPath,
