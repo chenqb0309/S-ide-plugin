@@ -45,7 +45,6 @@ npx @vscode/vsce package
 `.vscodeignore` 必排除：
 
 ```
-samples/**
 spike/**
 docs/**
 src/**            # 只留 out/

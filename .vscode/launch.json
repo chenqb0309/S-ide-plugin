@@ -7,7 +7,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "${workspaceFolder}/${input:sample}"
+        "${input:workspace}"
       ],
       "outFiles": [
         "${workspaceFolder}/out/**/*.js"
@@ -17,14 +17,10 @@
   ],
   "inputs": [
     {
-      "id": "sample",
-      "type": "pickString",
-      "description": "要用哪個資料夾當工作區？（一個樣本 = 一個工作區）",
-      "options": [
-        "samples/WarehouseShipping",
-        "samples/PalletStacker"
-      ],
-      "default": "samples/WarehouseShipping"
+      "id": "workspace",
+      "type": "promptString",
+      "description": "要用哪個資料夾當工作區？（含 .sem 的規格專案，或含 .cs 的文件測試專案）",
+      "default": "${workspaceFolder}"
     }
   ]
 }

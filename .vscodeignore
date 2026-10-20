@@ -3,7 +3,6 @@
 .github/**
 src/**
 spike/**
-samples/**
 docs/**
 scripts/**
 out/**/*.map

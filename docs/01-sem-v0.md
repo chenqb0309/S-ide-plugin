@@ -255,12 +255,10 @@ v0 **沒有修飾符**。並行、鎖、可見性、資料存取這些機制，�
 
 ## 範例
 
-| 樣本 | 用途 |
-|---|---|
-| [`samples/PalletStacker/`](../samples/PalletStacker/PalletStacker.sem) | 零外部依賴、一分鐘講完。用來驗證高亮／跳轉／增量 |
-| [`samples/WarehouseShipping/`](../samples/WarehouseShipping/WarehouseShipping.sem) | 多類別、requires 注入、真實業務規則。用來驗證「這東西到底有沒有用」 |
+樣本已移出本 repo（避免把示範資料混進產品）。要驗證高亮／跳轉／增量，請自備一個含 `.sem` 的資料夾，
+或用 `node scripts/run.mjs <你的工作區>` 執行。
 
-> **每個樣本自成一格工作區。** 用 `node scripts/run.mjs samples/<樣本名>` 執行，或在 VS Code 直接開啟該資料夾。
+> 一個工作區 = 一份規格。類別名必須全域唯一，所以不要把多份規格開在同一個工作區。
 
 ---
 

@@ -146,6 +146,7 @@ s-ide-plugin/
 │  └─ Telemetry.cs
 ├─ src/
 │  ├─ extension.ts                 # 薄 adapter：只接線，不做邏輯
+│  ├─ docs/feature.ts              # semDocs 接線：符號、呼叫鏈、寫檔
 │  └─ core/                        # 純 Node + TS，禁止 import 'vscode'
 │     ├─ parse.ts                  # .sem → AST
 │     ├─ lint.ts                   # 定址規則 lint（類別唯一／禁多載／斷鏈）
@@ -155,13 +156,11 @@ s-ide-plugin/
 │     ├─ build.ts                  # spawn dotnet + CS 錯誤解析
 │     ├─ scaffold.ts               # 首次使用偷偷建 .semantic_backend
 │     ├─ pipeline.ts               # 串起整條管線
-│     └─ fsx.ts                    # 安全檔案操作（禁用 fs.rmSync）
+│     ├─ fsx.ts                    # 安全檔案操作（禁用 fs.rmSync）
+│     └─ docs/                     # semDocs：code → Markdown（見 docs/01-semdocs-mvp.md）
 ├─ scripts/
 │  ├─ run.mjs                      # CLI：終端機跑同一條管線
 │  └─ check-layering.mjs           # 強制 src/core/ 不得相依 vscode
-├─ samples/                        # 每個樣本自成一格工作區
-│  ├─ PalletStacker/PalletStacker.sem              # 零相依，驗證高亮／跳轉／增量
-│  └─ WarehouseShipping/WarehouseShipping.sem      # 重量級，驗證契約注入與真實業務規則
 ├─ docs/
 └─ .vscode/                        # F5 啟動設定
 ```
@@ -214,10 +213,9 @@ npm run compile
 ```
 
 然後在 VS Code 按 <kbd>F5</kbd> —— 會開出一個 **Extension Development Host** 視窗。
-在那個視窗 `File → Open Folder` 開啟**單一樣本資料夾**（例如 `samples/WarehouseShipping`），就會自動啟用。
+啟動時會問你要用哪個資料夾當工作區，貼上你的專案路徑即可。
 
-> **一個樣本 = 一個工作區。** 每個樣本都宣告 `class App`，
-> 所以不要把整個 `samples/` 當成工作區——那會變成類別重複。
+> 一個工作區 = 一份規格。類別名必須全域唯一，所以不要把多份規格開在同一個工作區。
 
 1. 執行命令 `S-IDE: 設定 API Key`，貼上金鑰（存進 `SecretStorage`，不寫入 `settings.json`）
 2. 設定 `side.model`（例如 `gpt-4o`）
@@ -226,31 +224,26 @@ npm run compile
 5. 命令 `S-IDE: 執行`，或點狀態列左下角的 **S-IDE**
 
 > 想省錢可以用本機 Ollama：`side.baseUrl` = `http://localhost:11434/v1`、`side.model` = `qwen2.5-coder:7b`，API Key 隨便填。
+>
+> OpenCode Go：`side.baseUrl` = `https://opencode.ai/inference/go/openai/v1`、`side.model` = `deepseek-v4.1-flash`。
+> 它要求 `x-opencode-session` header，外掛已自動帶上。
 
 ### 方式二：CLI（同一條管線，除錯用）
-
-不需要 API Key 也能驗證整條管線。**每個樣本是自己的工作區，路徑要指定：**
 
 ```bash
 npm run compile
 npm run check                          # 分層檢查
 
-S=samples/WarehouseShipping             # 輕量樣本請用 samples/PalletStacker
-node scripts/run.mjs $S                  # execute（無金鑰時自動 MOCK）
+S=/path/to/你的規格專案
+node scripts/run.mjs $S                  # execute
 SIDE_MODE=compile  node scripts/run.mjs $S
 SIDE_MODE=rebuild  node scripts/run.mjs $S   # 刪掉 Generated/ 完全重建
-SIDE_MOCK_FAIL=1   node scripts/run.mjs $S   # 自我修復迴圈
-SIDE_MOCK_FAIL=9   node scripts/run.mjs $S   # 不可修復時提早放棄
 
 # 真的呼叫 AI（BYOK）
 SIDE_BASE_URL=https://api.openai.com/v1 SIDE_MODEL=gpt-4o SIDE_API_KEY=sk-... node scripts/run.mjs $S
 ```
 
-> ⚠️ MOCK 跑完之後 manifest 已是最新，**直接換真 AI 會顯示「沿用 N、重生 0」，AI 一次都不會被呼叫。**
-> 第一次真 AI 一定要加 `SIDE_FORCE=1`（或在 VS Code 用命令「刪除 Generated/ 並全部重建」）。
-
-**看核心宣稱**：改 `samples/PalletStacker/PalletStacker.sem` 裡任一行 body，再跑一次 —— 輸出會是
-`manifest：沿用 5、重生 1`，並且只有那一個 unit 的 `cacheKey` 改變。
+> 樣本已移出 repo，所以離線 MOCK 也不再內建。沒有 `SIDE_API_KEY` 會直接報錯，不會產出假程式碼。
 
 ### 疑難排解：編輯器滿江紅，但 `npm run compile` 是綠的
 
@@ -278,12 +271,12 @@ SIDE_BASE_URL=https://api.openai.com/v1 SIDE_MODEL=gpt-4o SIDE_API_KEY=sk-... no
 - **框架詞彙全面英文**：`class` / `func` / `data` / `requires` / `in:` / `out:` / `str` / `int` / `decimal` / `bool` / `date` / `void`
 - **識別字一律 ASCII**（`lintNames` 擋非 ASCII）；生成的 C# 是完全主流的英文識別字程式碼，中文只留在敘述與日誌字串
 - 新增規格 lint：未知型別（`lintTypes`）、舊寫法（`lintStaleSyntax`）
-- 重量級樣本：`samples/WarehouseShipping/`（1 data、5 class、5 func、11 個單元）**MOCK 下編譯與執行全綠**
 - 連結語法改為**反引號**；斷鏈檢查不再靜默跳過任何連結
+- 示範樣本已移出 repo（產品與樣本分離）
 
-尚未驗證：**真實 AI 呼叫**（需要 BYOK 金鑰）。目前所有驗證都在 MOCK 模式，即「管線本身」已被證明，但「模型第一次能否吐出編譯得過的 body」尚未實測。
+尚未驗證：**真實 AI 呼叫**（需要 BYOK 金鑰）。目前管線本身已被證明，但「模型第一次能否吐出編譯得過的 body」尚未實測。
 
-下一步：用真 AI 跑一次 `samples/WarehouseShipping` —— 這是唯一能回答「這東西到底有沒有用」的實驗。
+下一步：用真 AI 跑一次自己的規格專案 —— 這是唯一能回答「這東西到底有沒有用」的實驗。
 接著：S3 業務時序鏈面板與 DB 樣本。
 
 > ⚠️ **實作前必讀**：[S1 文件裡的 Node 檔案操作雷](docs/S1-incremental.md)。

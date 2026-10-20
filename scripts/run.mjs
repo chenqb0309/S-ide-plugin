@@ -11,8 +11,6 @@
  *     SIDE_API_KEY                        API Key（BYOK）
  *     SIDE_MAX_RETRY                      重試上限，預設 2
  *     SIDE_FORCE=1                        忽略 manifest，全量重生
- *     SIDE_MOCK=1                         不呼叫 AI，用罐頭回應
- *     SIDE_MOCK_FAIL=N                    前 N 次故意回傳壞掉的 body
  */
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -37,14 +35,12 @@ const opts = {
   },
   maxRetry: Number(process.env.SIDE_MAX_RETRY ?? 2),
   force: process.env.SIDE_FORCE === '1',
-  mock: process.env.SIDE_MOCK === '1' || !apiKey,
-  mockFail: Number(process.env.SIDE_MOCK_FAIL || 0),
 };
 
 const hyphen = '─'.repeat(60);
 console.log(hyphen);
 console.log(`S-IDE CLI   workspace: ${workspaceRoot}`);
-console.log(`mode: ${mode}   AI: ${opts.mock ? 'MOCK' : `${opts.ai.model} @ ${opts.ai.baseUrl}`}`);
+console.log(`mode: ${mode}   AI: ${apiKey ? `${opts.ai.model} @ ${opts.ai.baseUrl}` : '（未設定 API Key）'}`);
 console.log(hyphen + '\n');
 
 const fn = mode === 'rebuild' ? core.rebuildAll : mode === 'compile' ? core.compile : core.execute;

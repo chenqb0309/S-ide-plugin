@@ -34,6 +34,8 @@ export {
   readText,
   removeDir,
   removeFile,
+  scanCsFiles,
   scanSemFiles,
   writeText,
 } from './fsx';
+export * as docs from './docs';

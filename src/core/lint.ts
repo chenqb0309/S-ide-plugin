@@ -59,7 +59,7 @@ export function lint(files: SemFile[]): LintDiagnostic[] {
             relPath: f.relPath,
             line: decl.line - 1,
             severity: 'error',
-            message: `${label}「${decl.name}」重複定義（已在 ${prev} 定義）。${label} 名必須全域唯一——這是 \`class.func\` 能被唯一定址的前提。若你開啟的資料夾含多個樣本，請改開單一樣本（例：samples/WarehouseShipping）。`,
+            message: `${label}「${decl.name}」重複定義（已在 ${prev} 定義）。${label} 名必須全域唯一——這是 \`class.func\` 能被唯一定址的前提。若工作區內含多份規格造成同名，請一次只開一個專案。`,
           });
         } else {
           seen.set(decl.name, f.relPath);

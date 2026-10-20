@@ -90,6 +90,36 @@ export function scanSemFiles(workspaceRoot: string): string[] {
   return found.sort();
 }
 
+/**
+ * 遞迴掃描 .cs（相對路徑，正斜線）。
+ * `skipDirs` 是額外要跳過的目錄名稱，用來排除 docs 目錄本身。
+ */
+export function scanCsFiles(workspaceRoot: string, skipDirs: readonly string[] = []): string[] {
+  const skip = new Set([...SKIP_DIRS, ...skipDirs]);
+  const found: string[] = [];
+
+  const walk = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (skip.has(entry.name)) continue;
+        walk(full);
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.cs')) {
+        found.push(path.relative(workspaceRoot, full).replace(/\\/g, '/'));
+      }
+    }
+  };
+
+  walk(workspaceRoot);
+  return found.sort();
+}
+
 export function listAllFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name);

@@ -1,5 +1,6 @@
 import type { Method } from './types';
 import { methodSignature } from './codegen';
+import { aiError, aiHeaders, chatUrl } from './ai';
 
 export interface AiConfig {
   baseUrl: string;
@@ -30,12 +31,9 @@ export class Translator {
   async body(m: Method, contextMap: string, hint?: string): Promise<string> {
     if (this.isMock) return this.mockBody(m);
 
-    const res = await fetch(`${this.opts.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+    const res = await fetch(chatUrl(this.opts.baseUrl), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.opts.apiKey}`,
-      },
+      headers: aiHeaders(this.opts.apiKey),
       body: JSON.stringify({
         model: this.opts.model,
         temperature: 0,
@@ -47,7 +45,7 @@ export class Translator {
     });
 
     if (!res.ok) {
-      throw new Error(`AI 呼叫失敗 ${res.status}：${(await res.text()).slice(0, 400)}`);
+      throw new Error(`AI 呼叫失敗 ${await aiError(res)}`);
     }
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     return stripFence(data.choices?.[0]?.message?.content ?? '');
@@ -58,7 +56,7 @@ export class Translator {
     // 允許用 `<檔名>.sem:<class>.<func>` 覆寫——多個樣本工作區都以 `App.Main` 為入口
     const scoped = `${m.srcFile}:${key}`;
     const body = MOCK_BODIES[scoped] ?? MOCK_BODIES[key];
-    if (!body) throw new Error(`MOCK 模式沒有 ${scoped} 的罐頭回應`);
+    if (!body) throw new Error(`找不到 ${scoped} 的離線回應。請設定 API Key 與 side.model 後再執行。`);
 
     if (this.opts.mockFail) {
       const n = (this.calls.get(key) ?? 0) + 1;
@@ -117,123 +115,7 @@ export function stripFence(text: string): string {
     .trim();
 }
 
-// ── MOCK 罐頭回應（只給示範樣本用） ────────────────────────────────────────
-// 識別字一律英文——它們就是 C# 的識別字。中文只留在敘述與日誌字串裡。
-const MOCK_BODIES: Record<string, string> = {
-  'PalletStacker.sem:PalletStacker.BoxesPerLayer': [
-    'Telemetry.Step("判斷重量級距");',
-    'if (spec.Weight > 15m)',
-    '{',
-    '    return 4;',
-    '}',
-    'return 8;',
-  ].join('\n'),
-
-  'PalletStacker.sem:PalletStacker.LayersFor': [
-    'Telemetry.Step("計算層數");',
-    'return palletHeight / spec.Height;',
-  ].join('\n'),
-
-  'PalletStacker.sem:App.Main': [
-    'Telemetry.Step("建立樣本");',
-    'var spec = new BoxSpec { Weight = 18m, Length = 400, Width = 300, Height = 250 };',
-    'var stacker = new PalletStacker();',
-    'Telemetry.Step("計算單層箱數");',
-    'var boxes = stacker.BoxesPerLayer(spec);',
-    'Telemetry.Step("計算可堆疊層數");',
-    'var layers = stacker.LayersFor(spec, 1800);',
-    'Console.WriteLine($"單層箱數   = {boxes}");',
-    'Console.WriteLine($"可堆疊層數 = {layers}");',
-  ].join('\n'),
-
-  // ── 重量級樣本 samples/WarehouseShipping（離線驗證 harness，不含 AI） ──────
-  'WarehouseShipping.sem:AuditLog.Write': [
-    'Telemetry.Step("輸出稽核訊息");',
-    'Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");',
-  ].join('\n'),
-
-  'WarehouseShipping.sem:ShippingFeeCalculator.CalculateFee': [
-    'Telemetry.Step("免運門檻");',
-    'if (order.TotalAmount >= 1000m)',
-    '{',
-    '    return 0m;',
-    '}',
-    '',
-    'Telemetry.Step("依區域分級計價");',
-    'decimal perKg = order.Region switch',
-    '{',
-    '    "北部" => 30m,',
-    '    "中部" => 35m,',
-    '    "南部" => 40m,',
-    '    _ => 50m,',
-    '};',
-    'decimal minCharge = order.Region switch',
-    '{',
-    '    "北部" => 100m,',
-    '    "中部" => 120m,',
-    '    "南部" => 150m,',
-    '    _ => 150m,',
-    '};',
-    'decimal fee = Math.Max(order.WeightKg * perKg, minCharge);',
-    '',
-    'Telemetry.Step("偏遠地區加成");',
-    'if (order.Remote)',
-    '{',
-    '    fee += 200m;',
-    '}',
-    '',
-    'Telemetry.Step("超重加成");',
-    'if (order.WeightKg > 20m)',
-    '{',
-    '    fee += (order.WeightKg - 20m) * 10m;',
-    '}',
-    '',
-    'Telemetry.Step("記錄試算");',
-    'AuditLog.Write($"{order.OrderNo} 運費 {fee}");',
-    '',
-    'return fee;',
-  ].join('\n'),
-
-  'WarehouseShipping.sem:InventoryService.HasStock': [
-    'Telemetry.Step("檢查庫存量");',
-    'if (order.WeightKg > 500m)',
-    '{',
-    '    return false;',
-    '}',
-    'return true;',
-  ].join('\n'),
-
-  'WarehouseShipping.sem:ShippingService.Ship': [
-    'Telemetry.Step("檢查庫存");',
-    'if (!InventoryService.HasStock(order))',
-    '{',
-    '    return $"{order.OrderNo} 庫存不足";',
-    '}',
-    '',
-    'Telemetry.Step("計算運費");',
-    'var fee = ShippingFeeCalculator.CalculateFee(order);',
-    '',
-    'Telemetry.Step("產出出貨單");',
-    'var note = $"{order.OrderNo} 運費 {fee} 總金額 {order.TotalAmount}";',
-    '',
-    'Telemetry.Step("記錄出貨");',
-    'AuditLog.Write(note);',
-    '',
-    'return note;',
-  ].join('\n'),
-
-  'WarehouseShipping.sem:App.Main': [
-    'Telemetry.Step("第一張：北部、已達免運門檻");',
-    'var order1 = new Order { OrderNo = "A001", Region = "北部", TotalAmount = 1200m, WeightKg = 18m, Remote = false };',
-    'var shipping = new ShippingService();',
-    'Console.WriteLine(shipping.Ship(order1));',
-    '',
-    'Telemetry.Step("第二張：南部、偏遠、超重");',
-    'var order2 = new Order { OrderNo = "A002", Region = "南部", TotalAmount = 500m, WeightKg = 26m, Remote = true };',
-    'Console.WriteLine(shipping.Ship(order2));',
-    '',
-    'Telemetry.Step("第三張：庫存不足");',
-    'var order3 = new Order { OrderNo = "A003", Region = "北部", TotalAmount = 800m, WeightKg = 700m, Remote = false };',
-    'Console.WriteLine(shipping.Ship(order3));',
-  ].join('\n'),
-};
+// ── MOCK 罐頭回應 ──────────────────────────────────────────────────────────
+// 樣本已移出本 repo，這裡不再內建任何 body。
+// 沒有 API Key 時直接報錯，而不是產出看起來能跑、其實是假的程式碼。
+const MOCK_BODIES: Record<string, string> = {};

@@ -51,7 +51,7 @@ export type UnitKind = 'dto' | 'fields' | 'method';
 export interface Unit {
   key: string;
   kind: UnitKind;
-  /** 生成的檔名，例如 `PalletStacker.BoxesPerLayer.g.cs` */
+  /** 生成的檔名，例如 `OrderService.CalculateFee.g.cs` */
   file: string;
   /** 簽章的文字（型別／欄位／參數） */
   contract: string;

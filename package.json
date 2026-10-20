@@ -21,7 +21,10 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "workspaceContains:**/*.sem"
+    "workspaceContains:**/*.sem",
+    "onStartupFinished",
+    "onCommand:side.syncDocs",
+    "onCommand:side.rebuildDocs"
   ],
   "contributes": {
     "languages": [
@@ -68,6 +71,11 @@
           "type": "boolean",
           "default": true,
           "description": "儲存 .sem 時自動觸發生成"
+        },
+        "side.docsDir": {
+          "type": "string",
+          "default": "semDocs",
+          "description": "語義文件輸出目錄（相對 workspace 根）。空的或不存在時視為尚未建立。"
         }
       }
     },
@@ -95,8 +103,32 @@
       {
         "command": "side.showManifestDiff",
         "title": "S-IDE: 顯示上次的 Manifest 變動"
+      },
+      {
+        "command": "side.syncDocs",
+        "title": "S-IDE: 同步語義文件",
+        "icon": "$(book)"
+      },
+      {
+        "command": "side.rebuildDocs",
+        "title": "S-IDE: 重建全部語義文件"
       }
-    ]
+    ],
+    "menus": {
+      "scm/title": [
+        {
+          "command": "side.syncDocs",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "side.syncDocs",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    }
   },
   "scripts": {
     "compile": "tsc -p .",
