@@ -28,6 +28,8 @@ export interface MemberDoc {
 export interface ClassDoc {
   name: string;
   anchor: string;
+  /** 介面：用來在「介面 + 實作」同時被回報時決定連哪一個 */
+  isInterface: boolean;
   startLine: number;
   endLine: number;
   members: MemberDoc[];

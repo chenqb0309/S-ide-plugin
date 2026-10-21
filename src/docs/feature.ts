@@ -241,7 +241,8 @@ async function runSync(
   }
 
   core.docs.writeIndex(docsRoot);
-  if (!core.docs.readMarker(docsRoot)) core.docs.writeMarker(docsRoot);
+  // 版本升級時也要更新；否則 marker 永遠停在舊版，每次同步都會判定「模板版本不同」而全量重建。
+  if (!marker || marker.version !== core.docs.DOC_VERSION) core.docs.writeMarker(docsRoot, marker);
 
   // 這是一個會靜默漏改動的坑：semDocs 還沒 commit 時，baseline 只能退到 HEAD；
   // 一旦使用者先 commit 了 code，那個改動就從 diff 消失了。先講清楚。
@@ -406,13 +407,29 @@ class SymbolIndex {
   async idAt(
     absPath: string,
     line: number,
-  ): Promise<{ id: string; label: string; relMd: string; anchor: string } | undefined> {
+  ) : Promise<{
+    id: string;
+    label: string;
+    relMd: string;
+    anchor: string;
+    isInterface: boolean;
+    nameLine: number;
+    nameCharacter: number;
+  } | undefined> {
     const fileDoc = await this.get(absPath);
     if (!fileDoc) return undefined;
     for (const cls of fileDoc.classes) {
       for (const member of cls.members) {
         if (line >= member.startLine && line <= member.endLine) {
-          return { id: member.id, label: `${cls.name}.${member.name}`, relMd: fileDoc.relMd, anchor: member.anchor };
+          return {
+            id: member.id,
+            label: `${cls.name}.${member.name}`,
+            relMd: fileDoc.relMd,
+            anchor: member.anchor,
+            isInterface: cls.isInterface,
+            nameLine: member.nameLine,
+            nameCharacter: member.nameCharacter,
+          };
         }
       }
     }
@@ -444,8 +461,9 @@ function toFileDoc(
 
         const raw = child.detail || child.name;
         const bare = core.docs.bareName(raw);
-        // C# 有時把建構子回報成 Method，名字會等於 class 名
-        const isCtor = child.kind === vscode.SymbolKind.Constructor || bare === symbol.name;
+        // C# 有時把建構子回報成 Method，名字會等於 class 名（泛型類別要去掉 <T> 再比）
+        const classBare = symbol.name.replace(/<[^<>]*>/g, '').trim();
+        const isCtor = child.kind === vscode.SymbolKind.Constructor || bare === classBare;
         const name = isCtor ? 'ctor' : bare;
         const code = doc.getText(child.range);
         const params = core.docs.paramTypesOf(raw);
@@ -477,6 +495,7 @@ function toFileDoc(
       classes.push({
         name: symbol.name,
         anchor: core.docs.classAnchor(path.join('.')),
+        isInterface: symbol.kind === vscode.SymbolKind.Interface,
         startLine: symbol.range.start.line,
         endLine: symbol.range.end.line,
         members,
@@ -489,13 +508,14 @@ function toFileDoc(
 
   for (const symbol of symbols) visit(symbol, []);
 
-  // 第二輪才決定標題：多載要把參數型別寫進去，才會是 `Save (Product)` 而不是 `Save (2)`
+  // 第二輪才決定標題：多載用參數型別；沒有參數可區分時用類別名（比 `(2)` 有意義）
   const usedAnchors = new Set<string>();
   for (const cls of classes) {
     for (const m of cls.members) {
       const duplicated = (nameCounts.get(m.name) ?? 0) > 1;
-      const label =
-        duplicated && m.params.length ? `${m.name} (${m.params.map(core.docs.clampType).join(', ')})` : m.name;
+      const useClass = m.name === 'ctor' || m.params.length === 0;
+      const qualifier = useClass ? core.docs.clampType(cls.name) : m.params.map(core.docs.clampType).join(', ');
+      const label = duplicated ? `${m.name} (${qualifier})` : m.name;
       const { heading, anchor } = core.docs.uniqueHeading(label, usedAnchors);
       m.heading = heading;
       m.anchor = anchor;
@@ -580,12 +600,25 @@ async function buildCallGraphLocal(
               uri,
               pos,
             );
+            // 同一個呼叫點可能同時解析到介面與實作：只留一條，優先介面
+            let chosen: {
+              id: string;
+              label: string;
+              relMd: string;
+              anchor: string;
+              isInterface: boolean;
+            } | undefined;
+
             for (const def of defs ?? []) {
               if (!def.uri.fsPath.toLowerCase().endsWith('.cs')) continue;
               const target = await index.idAt(def.uri.fsPath, def.range.start.line);
               if (!target || target.id === member.id) continue;
+              if (!chosen || (!chosen.isInterface && target.isInterface)) chosen = target;
+            }
+
+            if (chosen) {
               const list = outgoing.get(member.id) ?? [];
-              list.push({ id: target.id, label: target.label, relMd: target.relMd, anchor: target.anchor });
+              list.push({ id: chosen.id, label: chosen.label, relMd: chosen.relMd, anchor: chosen.anchor });
               outgoing.set(member.id, list);
               edges += 1;
             }
@@ -622,14 +655,30 @@ async function buildCallGraph(
   log: (line: string) => void,
 ): Promise<Map<string, core.docs.CallLink[]>> {
   const outgoing = new Map<string, core.docs.CallLink[]>();
-  const members: Array<{ relCs: string; relMd: string; member: core.docs.MemberDoc; label: string }> = [];
+  const candidates = new Map<
+    string,
+    { callerId: string; link: core.docs.CallLink; isInterface: boolean }
+  >();
+  const members: Array<{
+    relCs: string;
+    relMd: string;
+    member: core.docs.MemberDoc;
+    label: string;
+    isInterface: boolean;
+  }> = [];
 
   for (const relCs of relFiles) {
     const fileDoc = await index.get(path.join(root, relCs));
     if (!fileDoc) continue;
     for (const cls of fileDoc.classes) {
       for (const m of cls.members) {
-        members.push({ relCs, relMd: fileDoc.relMd, member: m, label: `${cls.name}.${m.name}` });
+        members.push({
+          relCs,
+          relMd: fileDoc.relMd,
+          member: m,
+          label: `${cls.name}.${m.name}`,
+          isInterface: cls.isInterface,
+        });
       }
     }
   }
@@ -670,15 +719,25 @@ async function buildCallGraph(
       const caller = await index.idAt(ref.uri.fsPath, ref.range.start.line);
       if (!caller || caller.id === entry.member.id) continue;
 
-      const list = outgoing.get(caller.id) ?? [];
-      list.push({
-        id: entry.member.id,
-        label: entry.label,
-        relMd: entry.relMd,
-        anchor: entry.member.anchor,
-      });
-      outgoing.set(caller.id, list);
+      // 落在呼叫者自己的宣告上 → 那是「實作介面」，不是呼叫
+      if (ref.range.start.line === caller.nameLine && ref.range.start.character === caller.nameCharacter) continue;
+
+      // 同一個呼叫點可能同時回報介面與實作；用位置去重，優先留介面
+      const key = `${caller.id}@${ref.uri.fsPath.toLowerCase()}:${ref.range.start.line}:${ref.range.start.character}`;
+      const candidate = {
+        callerId: caller.id,
+        link: { id: entry.member.id, label: entry.label, relMd: entry.relMd, anchor: entry.member.anchor },
+        isInterface: entry.isInterface,
+      };
+      const prev = candidates.get(key);
+      if (!prev || (!prev.isInterface && candidate.isInterface)) candidates.set(key, candidate);
     }
+  }
+
+  for (const c of candidates.values()) {
+    const list = outgoing.get(c.callerId) ?? [];
+    list.push(c.link);
+    outgoing.set(c.callerId, list);
   }
 
   log(

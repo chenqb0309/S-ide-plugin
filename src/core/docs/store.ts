@@ -30,11 +30,12 @@ export function readMarker(dir: string): Marker | null {
   }
 }
 
-export function writeMarker(dir: string): void {
+export function writeMarker(dir: string, previous?: Marker | null): void {
   const marker: Marker = {
     version: DOC_VERSION,
     generator: 's-ide/docs',
-    createdAt: new Date().toISOString(),
+    // 版本升級時保留原本的建立時間，避免每次同步都改這一行
+    createdAt: previous?.createdAt || new Date().toISOString(),
   };
   writeText(markerPath(dir), JSON.stringify(marker, null, 2) + '\n');
 }

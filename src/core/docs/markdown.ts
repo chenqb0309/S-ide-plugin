@@ -9,7 +9,7 @@ import type { MemberDoc } from './types';
  * 這樣 VS Code、GitHub、Obsidian 都能正確跳轉。
  */
 
-export const DOC_VERSION = 4;
+export const DOC_VERSION = 5;
 export const MARKER_FILE = '.semrc.json';
 export const INDEX_FILE = 'index.md';
 
@@ -87,14 +87,18 @@ export function renderMember(
   return lines.join('\n');
 }
 
-export function renderFileHeader(relCs: string): string {
-  return [
+export function renderFileHeader(relCs: string, classNames: readonly string[] = []): string {
+  const lines = [
     `# ${relCs.split('/').pop() ?? relCs}`,
     '',
     `<!-- source: ${relCs} -->`,
+  ];
+  if (classNames.length) lines.push('', classNames.join(' · '));
+  lines.push(
     '',
     '> 本檔由 S-IDE 從原始碼產生。**請勿手動編輯**；改完 code 後執行「S-IDE: 同步語義文件」。',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 /**
@@ -133,7 +137,7 @@ export function renderFile(
   relCs: string,
   classes: ReadonlyArray<{ name: string; blocks: string[]; props?: Array<{ name: string; type: string }> }>,
 ): string {
-  const parts: string[] = [renderFileHeader(relCs)];
+  const parts: string[] = [renderFileHeader(relCs, classes.map((c) => c.name))];
 
   for (const cls of classes) {
     parts.push(renderClassHeading(cls.name));
