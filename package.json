@@ -24,9 +24,27 @@
     "onStartupFinished",
     "onCommand:side.syncDocs",
     "onCommand:side.rebuildDocs",
-    "onCommand:side.setApiKey"
+    "onCommand:side.setApiKey",
+    "onCommand:side.openSettings"
   ],
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "side",
+          "title": "S-IDE",
+          "icon": "resources/side.svg"
+        }
+      ]
+    },
+    "views": {
+      "side": [
+        {
+          "id": "side.docs",
+          "name": "語義文件"
+        }
+      ]
+    },
     "configuration": {
       "title": "S-IDE",
       "properties": {
@@ -62,9 +80,31 @@
         "command": "side.setApiKey",
         "title": "S-IDE: 設定 API Key",
         "icon": "$(key)"
+      },
+      {
+        "command": "side.openSettings",
+        "title": "S-IDE: 開啟設定",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "side.syncDocs",
+          "when": "view == side.docs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "side.rebuildDocs",
+          "when": "view == side.docs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "side.openSettings",
+          "when": "view == side.docs",
+          "group": "navigation@3"
+        }
+      ],
       "scm/title": [
         {
           "command": "side.syncDocs",

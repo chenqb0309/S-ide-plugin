@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import * as docsFeature from './docs/feature';
+import { DocsTreeProvider } from './views/docsTree';
+import { openSettingsPanel } from './views/settingsPanel';
 
 /**
  * S-IDE 的 VS Code 外掛。
@@ -13,6 +15,7 @@ const KEY_SECRET = 'side.apiKey';
 let ctx: vscode.ExtensionContext;
 let out: vscode.OutputChannel;
 let status: vscode.StatusBarItem;
+let tree: DocsTreeProvider;
 
 export function activate(context: vscode.ExtensionContext): void {
   ctx = context;
@@ -23,10 +26,16 @@ export function activate(context: vscode.ExtensionContext): void {
   status.text = '$(book) semDocs';
   status.tooltip = 'S-IDE：同步語義文件（code → Markdown）';
 
+  tree = new DocsTreeProvider(workspaceRoot, docsDir);
+
   context.subscriptions.push(
     out,
     status,
-    vscode.workspace.onDidChangeWorkspaceFolders(() => syncStatusVisibility()),
+    vscode.window.registerTreeDataProvider('side.docs', tree),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      syncStatusVisibility();
+      tree.refresh();
+    }),
     registerCommands(),
   );
 
@@ -34,7 +43,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   out.appendLine('S-IDE 已啟用。');
   out.appendLine(`  工作區：${workspaceRoot() ?? '(未開啟資料夾)'}`);
-  out.appendLine('  semDocs：點狀態列「semDocs」，或執行「S-IDE: 同步語義文件」');
+  out.appendLine('  semDocs：點狀態列「semDocs」或側邊欄的「同步語義文件」');
 }
 
 export function deactivate(): void {
@@ -58,11 +67,23 @@ function registerCommands(): vscode.Disposable {
       });
       if (value === undefined) return;
       await ctx.secrets.store(KEY_SECRET, value.trim());
+      tree.refresh();
       void vscode.window.showInformationMessage('S-IDE：API Key 已儲存。');
     }),
 
-    vscode.commands.registerCommand('side.syncDocs', () => docsFeature.syncDocs(docsDeps(), 'auto')),
-    vscode.commands.registerCommand('side.rebuildDocs', () => docsFeature.syncDocs(docsDeps(), 'full')),
+    vscode.commands.registerCommand('side.syncDocs', async () => {
+      await docsFeature.syncDocs(docsDeps(), 'auto');
+      tree.refresh();
+    }),
+
+    vscode.commands.registerCommand('side.rebuildDocs', async () => {
+      await docsFeature.syncDocs(docsDeps(), 'full');
+      tree.refresh();
+    }),
+
+    vscode.commands.registerCommand('side.openSettings', async () => {
+      await openSettingsPanel(ctx, () => tree.refresh());
+    }),
   );
 }
 
@@ -72,6 +93,10 @@ function docsDeps(): docsFeature.DocsDeps {
 
 function workspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
+function docsDir(): string {
+  return config().get<string>('docsDir', 'semDocs') || 'semDocs';
 }
 
 function config(): vscode.WorkspaceConfiguration {

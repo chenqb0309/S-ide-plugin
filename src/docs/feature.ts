@@ -779,12 +779,26 @@ function log(deps: DocsDeps, line: string): void {
   deps.out.appendLine(line);
 }
 
+let lastSummary = '';
+
+/** 側邊欄顯示用：上一次同步的結果摘要。 */
+export function lastRunSummary(): string {
+  return lastSummary;
+}
+
 function report(deps: DocsDeps, stats: RunStats): void {
   deps.out.show(true);
   deps.out.appendLine('');
   deps.out.appendLine(
     `完成：處理 ${stats.files} 檔、重寫 ${stats.rewritten} 份文件、移除 ${stats.removed} 份（${stats.mode}）`,
   );
+
+  const time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+  lastSummary =
+    stats.mode === 'none'
+      ? `已同步 · ${time}`
+      : `${stats.rewritten} 份更新 · ${stats.files} 檔 · ${time}`;
+
   if (stats.mode === 'none') return;
   void vscode.window.setStatusBarMessage(
     `$(check) S-IDE docs：${stats.rewritten} 份更新（${stats.files} 檔）`,
