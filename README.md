@@ -1,289 +1,83 @@
-# S-IDE Plugin
+# S-IDE
 
-> **語義是唯一的原始碼；C# 是可拋棄的產物。**
+> 把既有的 C# 原始碼翻成「帶呼叫鏈的 Markdown 文件群」，讓人看得懂程式在做什麼。
 
-一個讓工程師只維護「結構化中文規格」，真實 C# 程式碼完全隱匿在後台的 **VS Code 外掛**。
-
----
+按一個按鈕（狀態列／命令面板／Source Control 標題列），在 `semDocs/` 產生對應的文件。
+code 是真相，Markdown 是可拋棄的投影。
 
 ## 這個 repo 是什麼
 
-VS Code 外掛的實作。
+- VS Code 外掛
+- 主要對象：既有專案（legacy、沒人想動的那種）
+- 核心取捨：**拓撲由語言伺服器算，AI 只寫敘述**
+- 不含 `.sem` 規格管線（那條線在 `source/repos/s-ide`）
 
-先前規劃的路線是「自建前端（Vite + Monaco）→ 之後打包 Electron」。**本 repo 推翻該路線，改為寄生 VS Code**，因此獨立另起，不繼承任何既有 repo。
-
----
-
-## 為什麼寄生 VS Code
-
-寄生宿主一次砍掉下列全部工作：
-
-| 原本要自建 | VS Code 直接提供 |
-|---|---|
-| Electron 殼 | 宿主本身就是 |
-| Monaco 整合 | 內建（VS Code 就是 Monaco） |
-| 檔案樹 | 內建 |
-| 終端機、命令面板、狀態列 | 內建 API |
-| 語法高亮引擎 | 寫一份 TextMate grammar **宣告檔**，不用寫程式 |
-| 快捷鍵、設定頁、金鑰加密儲存 | `keybindings` / `configuration` / `SecretStorage` |
-| 發佈管道 | Marketplace |
-| 安裝、更新、簽章、通知 | 微軟做完 |
-
-| | 舊路線（自建） | 新路線（寄生） |
-|---|---|---|
-| 宿主 | Electron + Vite + Monaco | VS Code |
-| 檔案樹 / 終端機 | 自己寫 / xterm.js | 內建 |
-| 跳轉 | 自己寫 AST | `DocumentLinkProvider` |
-| 發佈 | 打包 + 簽章 | Marketplace |
-| 工時 | 兩個月 | **一週（v0）** |
-
-**代價：綁死宿主。** 因此管線**必須**與 `vscode` API 解耦（見 [docs/S2-shell.md](docs/S2-shell.md) 的分層規則）。
-
----
-
-## 核心宣稱（唯一要證明的事）
-
-> **改一行規格，只有一個方法被重建；其餘一個位元組都沒動。**
-> 而編譯器會在 1 秒內告訴你對不對。
-
-不是「中文能生程式碼」——那是 2023 年就有的東西。
-是「**生成物有可證明的爆炸半徑，而且有裁判**」。
-
----
-
-## 與市場的關係
-
-2026 年 SDD 已成熟：**Tessl**（規格是唯一真相、**不能編輯生成碼**）、**Kiro**、**GitHub Spec Kit**、**OpenSpec**、**BMAD**、**SPECLAN**（VS Code 規格層，已上架）。
-
-**「規格優先 + 生成碼不可編輯」這個位置已經被佔據。**
-
-但全場有一個共同缺口（來自公開評測的抱怨）：
-
-- Spec Kit：「沒有 diff。只改一小段，整份已審過的計畫被完全取代。」
-- 社群結論：「真正的魔法是**只把相關文檔過濾進 AI 的 context**。」
-- 「Spec bloat：半小時的功能生出 800 行 markdown。」
-
-| | 全場現況 | 本專案 |
-|---|---|---|
-| 規格載體 | markdown 散文 | **型別化契約** |
-| 粒度 | feature / 整份文件 | **method** |
-| 重生 | 全量取代 | **hash 增量** |
-| 改一行 | 整份重生、無 diff | **manifest diff：N 檔只有 1 檔變** |
-| 驗證 | 人讀 | **編譯器 oracle** |
-
-> **差異化在「單位級增量失效」，不在「中文」。**
-> 中文只是最表層、最容易被抄、最容易被說「Tessl 做過了」的那一層。
-
-被問到「你跟 Tessl 差在哪」時，答案是上面那張表的第三行與第四行。
-
----
-
-## 範圍
-
-### v0 做
-
-- `.sem` → C# 生成、編譯、**失敗自動修復**、執行
-- 保守增量重算 + `manifest.json`（**可證明**的爆炸半徑）
-- VS Code 外掛殼：高亮、跨檔連結跳轉、**斷鏈紅線**、輸出面板
-- 業務時序鏈
-- 全刪 `Generated/` → 重建
-- BYOK 設定（OpenAI 相容端點）
-
-### v0 不做
-
-| 排除項 | 理由 |
-|---|---|
-| 斷點映射 | 需讀 PDB 或接 DAP；幾週不是幾天。留 v1，用 `#line` 實作 |
-| DI 自動裝配 | Prelude 自己持有連線，v0 不需要 |
-| 精確依賴圖 | v0 用保守失效（改簽章即全量重生） |
-| 跨檔傳遞失效 | 同上 |
-| runtime oracle | v0 只有 build oracle |
-| 觀測性、prompt 版控、eval | 跑通之後再說 |
-| 獨立桌面版 | 寄生的意義就是不獨立 |
-| 影片、上架 | 實作完成後處理 |
-
----
-
-## 里程碑
-
-| 階段 | 目標 | 驗收 | 文件 |
-|---|---|---|---|
-| **S0** ✅ | 命令列閉環：`.sem` → 生成 → 編譯 → 修復 → 執行 | 連續改 10 次，10 次成功執行 | [S0](docs/S0-skeleton.md) |
-| **S1** ✅ | 保守增量 + manifest + 一單元一檔 | 改 body 只有 1 個 cacheKey 變；刪 `Generated/` 可完全重建 | [S1](docs/S1-incremental.md) |
-| **S2** ✅ | VS Code 外掛殼，接線到 core | 高亮、跳轉、斷鏈紅線、存檔觸發、設定頁、首次 scaffold | [S2](docs/S2-shell.md) |
-| **S3** | 業務時序鏈面板 + 契約注入 + DB 樣本 | 時序鏈面板；`契約` 注入的協作者可直接使用 | [S3](docs/S3-timeline.md) |
-| **S4** | 打包 + 上架 | 全新機器填入金鑰即可跑通 | [S4](docs/S4-config-release.md) |
-
-**順序理由：S0 是最危險的一步（`spawn dotnet` + 錯誤解析），所以排第一，而且刻意不做 UI。**
-跳轉、高亮是最容易做得漂亮、但最不承載論點的部分，排在後面。
-
----
-
-## 技術棧
-
-| 層 | 選擇 | 備註 |
-|---|---|---|
-| 宿主 | VS Code 外掛 | 寄生，不獨立 |
-| 語言 | TypeScript | extension host 是 Node |
-| AI | **BYOK**，OpenAI 相容端點 | base URL / model / key 三格；使用者自填 |
-| 金鑰 | `vscode.SecretStorage` | 不進 `settings.json` |
-| 目標語言 | C# / .NET 10 | **TFM 釘 `net10.0`** |
-| Oracle | `dotnet build` | v0 唯一 oracle |
-| 資料 | SQLite（S3 起） | Prelude 持有連線，AI 不做 DI |
-| 高亮 | TextMate grammar | 宣告檔，無程式邏輯 |
-
----
-
-## 目錄結構
+## 目錄
 
 ```
-s-ide-plugin/
-├─ package.json                    # extension manifest（contributes / 設定 / 命令）
-├─ language-configuration.json     # 括號配對、註解符號
-├─ syntaxes/sem.tmLanguage.json    # 高亮（宣告檔，無程式邏輯）
-├─ prelude/                        # C# 前導庫。AI 只能引用，不能發明
-│  ├─ SemanticSourceAttribute.cs
-│  └─ Telemetry.cs
-├─ src/
-│  ├─ extension.ts                 # 薄 adapter：只接線，不做邏輯
-│  ├─ docs/feature.ts              # semDocs 接線：符號、呼叫鏈、寫檔
-│  └─ core/                        # 純 Node + TS，禁止 import 'vscode'
-│     ├─ parse.ts                  # .sem → AST
-│     ├─ lint.ts                   # 定址規則 lint（類別唯一／禁多載／斷鏈）
-│     ├─ codegen.ts                # 簽章索引、單元切割、harness 骨架生成
-│     ├─ manifest.ts               # cache key / 保守增量 / 孤兒清理
-│     ├─ translate.ts              # OpenAI 相容呼叫（BYOK）
-│     ├─ build.ts                  # spawn dotnet + CS 錯誤解析
-│     ├─ scaffold.ts               # 首次使用偷偷建 .semantic_backend
-│     ├─ pipeline.ts               # 串起整條管線
-│     ├─ fsx.ts                    # 安全檔案操作（禁用 fs.rmSync）
-│     └─ docs/                     # semDocs：code → Markdown（見 docs/01-semdocs-mvp.md）
-├─ scripts/
-│  ├─ run.mjs                      # CLI：終端機跑同一條管線
-│  └─ check-layering.mjs           # 強制 src/core/ 不得相依 vscode
-├─ docs/
-└─ .vscode/                        # F5 啟動設定
+src/
+├─ extension.ts          # 只做接線
+├─ docs/feature.ts       # 符號、呼叫圖、寫檔
+└─ core/                 # 純 Node/TS，禁止 import 'vscode'
+   ├─ ai.ts              # OpenAI 相容呼叫（含 OpenCode Go 的 session header）
+   ├─ fsx.ts             # 檔案操作（禁用 fs.rmSync）
+   └─ docs/              # 文件模型、排版、增量、AI prompt
 ```
 
-**為什麼不用 monorepo（workspaces）**：v0 不需要，會多一層建置複雜度。
-**但分層規則用腳本強制**：`npm run check` 會讓 `src/core/**` 相依 `vscode` 直接失敗。這是寄生策略唯一的保險。
+`npm run check` 會強制 `src/core/**` 不得相依 `vscode`。
 
----
-
-## 決策摘要
-
-| 項目 | 決定 | 理由 |
-|---|---|---|
-| 形態 | VS Code 外掛 | 砍掉最多成本，且取得發佈管道 |
-| 核心宣稱 | 單位級增量失效 | 全場共同缺口，且可證明 |
-| 粒度 | method；一單元一 `partial class` 檔 | 讓「只重生一個方法」=「只有一個檔案 hash 變」 |
-| 定址 | `類別.方法`；**類別全域唯一**；**禁止多載** | 讓連結只靠 regex 解析 |
-| 連結 | **反引號**（`` `類別.方法` ``），維基式、不帶參數 | 程式設計師對「反引號 = 識別字」有肌肉記憶；帶參數會把它變成程式 |
-| 語言界線 | **框架英文、識別字 ASCII、敘述自由** | 框架要一眼看懂；識別字會被**沿用**進 C#，所以不能是中文 |
-| 機制 | **不住 `.sem` 裡**（無修飾符）；由 harness 規則推斷 | 判準：這標記是在說「要什麼」還是「怎麼做」 |
-| 觸發 | **存檔**觸發，非每次修改 | 打字觸發 = 成本與延遲失控 |
-| 增量 | 保守失效（改簽章即全量重生） | 永遠正確，不需維護依賴圖 |
-| AI | BYOK，OpenAI 相容端點 | 一個 code path 吃掉所有供應商；無伺服器 |
-| Oracle | `dotnet build` | 確定性、免費、且不討好你 |
-| 斷點映射 | 延到 v1，用 `#line` | 自訂 PDB 解析是幾週的工作 |
-
----
-
-## 文件
-
-| 文件 | 內容 |
-|---|---|
-| [docs/01-sem-v0.md](docs/01-sem-v0.md) | `.sem` v0 文法子集與**定址規則** |
-| [docs/02-prelude-v0.md](docs/02-prelude-v0.md) | Prelude 前導庫 v0 契約 |
-| [docs/S0-skeleton.md](docs/S0-skeleton.md) | 命令列閉環（最危險的一步） |
-| [docs/S1-incremental.md](docs/S1-incremental.md) | 保守增量與 manifest |
-| [docs/S2-shell.md](docs/S2-shell.md) | VS Code 外掛殼與分層 |
-| [docs/S3-timeline.md](docs/S3-timeline.md) | 業務時序鏈、執行、DB 樣本 |
-| [docs/S4-config-release.md](docs/S4-config-release.md) | BYOK 設定與打包 |
-
----
-
-## 跑起來
-
-### 方式一：VS Code 外掛（F5）
+## 開發
 
 ```bash
 npm install
-npm run compile
+npm run compile     # tsc
+npm run check       # 分層檢查
 ```
 
-然後在 VS Code 按 <kbd>F5</kbd> —— 會開出一個 **Extension Development Host** 視窗。
-啟動時會問你要用哪個資料夾當工作區，貼上你的專案路徑即可。
+按 <kbd>F5</kbd> 開 Extension Development Host，開啟一個 C# 專案。
 
-> 一個工作區 = 一份規格。類別名必須全域唯一，所以不要把多份規格開在同一個工作區。
+## 設定
 
-1. 執行命令 `S-IDE: 設定 API Key`，貼上金鑰（存進 `SecretStorage`，不寫入 `settings.json`）
-2. 設定 `side.model`（例如 `gpt-4o`）
-3. 開該資料夾內的 `.sem` → 應該看到中文關鍵字高亮，`` `類別.方法` `` 是可點的連結
-4. <kbd>Ctrl</kbd>+<kbd>S</kbd> 存檔 → 觸發生成
-5. 命令 `S-IDE: 執行`，或點狀態列左下角的 **S-IDE**
+| 設定 | 說明 |
+|---|---|
+| `side.baseUrl` | OpenAI 相容端點，預設 `https://api.openai.com/v1` |
+| `side.model` | 模型名稱（空白會拒絕執行） |
+| `side.docsDir` | 輸出目錄，預設 `semDocs` |
 
-> 想省錢可以用本機 Ollama：`side.baseUrl` = `http://localhost:11434/v1`、`side.model` = `qwen2.5-coder:7b`，API Key 隨便填。
->
-> OpenCode Go：`side.baseUrl` = `https://opencode.ai/inference/go/openai/v1`、`side.model` = `deepseek-v4.1-flash`。
-> 它要求 `x-opencode-session` header，外掛已自動帶上。
+API Key 用命令 **`S-IDE: 設定 API Key`** 存進 `SecretStorage`，不會寫進 `settings.json`。
 
-### 方式二：CLI（同一條管線，除錯用）
+常見端點：
 
-```bash
-npm run compile
-npm run check                          # 分層檢查
-
-S=/path/to/你的規格專案
-node scripts/run.mjs $S                  # execute
-SIDE_MODE=compile  node scripts/run.mjs $S
-SIDE_MODE=rebuild  node scripts/run.mjs $S   # 刪掉 Generated/ 完全重建
-
-# 真的呼叫 AI（BYOK）
-SIDE_BASE_URL=https://api.openai.com/v1 SIDE_MODEL=gpt-4o SIDE_API_KEY=sk-... node scripts/run.mjs $S
-```
-
-> 樣本已移出 repo，所以離線 MOCK 也不再內建。沒有 `SIDE_API_KEY` 會直接報錯，不會產出假程式碼。
-
-### 疑難排解：編輯器滿江紅，但 `npm run compile` 是綠的
-
-這是 VS Code 專案最常見的假警報，跟程式碼無關。**以 `npm run compile` 為準。**
-
-| 症狀 | 原因 | 修法 |
+| 供應商 | `side.baseUrl` | 範例模型 |
 |---|---|---|
-| `找不到名稱 'clearTimeout'`、`找不到命名空間 'NodeJS'`、`Cannot find module 'node:path'` | TypeScript server 在 `npm install` 之前就啟動了，快取裡沒有 `node_modules/@types` | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> → **`TypeScript: Restart TS Server`** |
-| 重啟後仍在 | VS Code 用的是內建 TypeScript，不是專案那一份 | 本 repo 已附 `.vscode/settings.json` 釘住 `typescript.tsdk`；首次開啟會問你要不要用工作區版本，選 **Allow** |
-| 完全不對 | 你開的是單一檔案，不是資料夾 | `File → Open Folder` 開**含 `tsconfig.json` 的那一層** |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| OpenCode Go | `https://opencode.ai/inference/go/openai/v1` | `glm-5.3-flash` |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| Ollama | `http://localhost:11434/v1` | `qwen2.5-coder:7b` |
 
-診斷指令：<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> → `TypeScript: Go to Project Configuration`，
-應該要跳到 `tsconfig.json`。
+## 文件長相
 
----
+```markdown
+### HandleAsync
+`Task<ActionResult<List<ProductDto>>> HandleAsync(CancellationToken ct)`
 
-## 狀態
+1. 從資料來源取得全部產品
+2. 將每筆產品轉為回應格式
+3. 回傳清單
 
-**S0、S1、S2 完成並驗證通過。**
+- 呼叫 → [IRepository<T>.GetAllAsync](../Core/Interfaces/IRepository.md#getallasync)
+```
 
-- S0：管線、編譯、自我修復、提早放棄、執行
-- S1：保守增量、manifest、孤兒清理、全刪重建
-- S2：VS Code 外掛（高亮、跳轉、斷鏈紅線、存檔觸發、BYOK 設定、首次 scaffold）、workspace 級管線
-- 契約注入：`requires` 現在生成**真實欄位**（`private readonly T name = new T();`），協作者由 harness 提供，AI 只能使用不能發明
-- **框架詞彙全面英文**：`class` / `func` / `data` / `requires` / `in:` / `out:` / `str` / `int` / `decimal` / `bool` / `date` / `void`
-- **識別字一律 ASCII**（`lintNames` 擋非 ASCII）；生成的 C# 是完全主流的英文識別字程式碼，中文只留在敘述與日誌字串
-- 新增規格 lint：未知型別（`lintTypes`）、舊寫法（`lintStaleSyntax`）
-- 連結語法改為**反引號**；斷鏈檢查不再靜默跳過任何連結
-- 示範樣本已移出 repo（產品與樣本分離）
+- anchor = 標題 slug（標準 Markdown，VS Code／GitHub／Obsidian 都能跳）
+- 類別之間以 `---` 分隔，檔頭有類別目錄
+- 簡單 auto-property 集中成「屬性一覽」表，不花 AI
+- 增量更新：只重寫有變動的節點，其餘原字節保留
 
-尚未驗證：**真實 AI 呼叫**（需要 BYOK 金鑰）。目前管線本身已被證明，但「模型第一次能否吐出編譯得過的 body」尚未實測。
+## 前置條件
 
-下一步：用真 AI 跑一次自己的規格專案 —— 這是唯一能回答「這東西到底有沒有用」的實驗。
-接著：S3 業務時序鏈面板與 DB 樣本。
-
-> ⚠️ **實作前必讀**：[S1 文件裡的 Node 檔案操作雷](docs/S1-incremental.md)。
-> `fs.rmSync` 對中文路徑會讓 Node 硬崩潰，本專案全面使用中文檔名，因此**禁用 `fs.rmSync`**。
-
----
+- 需要 C# 語言伺服器（C# Dev Kit / OmniSharp）提供符號與 references
+- 沒有 API Key 不會執行（不產出「有結構、沒說明」的空殼）
 
 ## 授權
 
-待定。
+UNLICENSED（私有專案）

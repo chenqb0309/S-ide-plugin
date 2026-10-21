@@ -2,7 +2,6 @@
 .vscode/**
 .github/**
 src/**
-spike/**
 docs/**
 scripts/**
 out/**/*.map
@@ -12,4 +11,3 @@ tsconfig.json
 .gitattributes
 .editorconfig
 **/.DS_Store
-**/.semantic_backend/**

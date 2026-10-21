@@ -64,31 +64,7 @@ export function listFiles(dir: string, filter: (name: string) => boolean): strin
     .map((e) => e.name);
 }
 
-const SKIP_DIRS = new Set(['node_modules', '.git', 'out', 'bin', 'obj', '.semantic_backend', '.vscode-test']);
-
-/** 遞迴掃描 workspace 內的 .sem（相對路徑） */
-export function scanSemFiles(workspaceRoot: string): string[] {
-  const found: string[] = [];
-  const walk = (dir: string): void => {
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
-        walk(full);
-      } else if (entry.isFile() && entry.name.endsWith('.sem')) {
-        found.push(path.relative(workspaceRoot, full).replace(/\\/g, '/'));
-      }
-    }
-  };
-  walk(workspaceRoot);
-  return found.sort();
-}
+const SKIP_DIRS = new Set(['node_modules', '.git', 'out', 'bin', 'obj', '.vscode-test']);
 
 /**
  * 遞迴掃描 .cs（相對路徑，正斜線）。

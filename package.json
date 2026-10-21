@@ -1,7 +1,7 @@
 {
   "name": "s-ide-plugin",
   "displayName": "S-IDE",
-  "description": "語義是唯一的原始碼；C# 是可拋棄的產物。以 .sem 為唯一真相來源的 coding agent harness。",
+  "description": "把既有 C# 原始碼翻成帶呼叫鏈的 Markdown 文件群，讓人看得懂程式在做什麼。",
   "version": "0.1.0",
   "publisher": "chenqb0309",
   "license": "UNLICENSED",
@@ -10,100 +10,44 @@
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Programming Languages",
+    "Documentation",
     "Other"
   ],
   "keywords": [
-    "sem",
     "semantic",
-    "harness",
-    "spec"
+    "documentation",
+    "csharp",
+    "markdown"
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "workspaceContains:**/*.sem",
     "onStartupFinished",
     "onCommand:side.syncDocs",
-    "onCommand:side.rebuildDocs"
+    "onCommand:side.rebuildDocs",
+    "onCommand:side.setApiKey"
   ],
   "contributes": {
-    "languages": [
-      {
-        "id": "sem",
-        "aliases": [
-          "SEM",
-          "S-IDE 規格"
-        ],
-        "extensions": [
-          ".sem"
-        ],
-        "configuration": "./language-configuration.json"
-      }
-    ],
-    "grammars": [
-      {
-        "language": "sem",
-        "scopeName": "source.sem",
-        "path": "./syntaxes/sem.tmLanguage.json"
-      }
-    ],
     "configuration": {
       "title": "S-IDE",
       "properties": {
         "side.baseUrl": {
           "type": "string",
           "default": "https://api.openai.com/v1",
-          "markdownDescription": "OpenAI 相容端點。任何相容服務都可以：OpenAI、DeepSeek、OpenRouter、Groq、本機 Ollama…"
+          "markdownDescription": "OpenAI 相容端點。例如 OpenAI、DeepSeek、OpenRouter、本機 Ollama、OpenCode Go…"
         },
         "side.model": {
           "type": "string",
           "default": "",
-          "description": "模型名稱，例如 gpt-4o 或 qwen2.5-coder:7b"
-        },
-        "side.maxRetry": {
-          "type": "number",
-          "default": 2,
-          "minimum": 0,
-          "maximum": 5,
-          "description": "編譯失敗時，回饋給 AI 重新生成的上限次數"
-        },
-        "side.autoGenerateOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "儲存 .sem 時自動觸發生成"
+          "description": "模型名稱，例如 gpt-4o-mini、deepseek-chat、qwen2.5-coder:7b"
         },
         "side.docsDir": {
           "type": "string",
           "default": "semDocs",
-          "description": "語義文件輸出目錄（相對 workspace 根）。空的或不存在時視為尚未建立。"
+          "description": "語義文件輸出目錄（相對 workspace 根）。不存在時視為尚未建立。"
         }
       }
     },
     "commands": [
-      {
-        "command": "side.setApiKey",
-        "title": "S-IDE: 設定 API Key"
-      },
-      {
-        "command": "side.generate",
-        "title": "S-IDE: 生成（存檔觸發的那條管線）"
-      },
-      {
-        "command": "side.execute",
-        "title": "S-IDE: 執行"
-      },
-      {
-        "command": "side.rebuildAll",
-        "title": "S-IDE: 刪除 Generated/ 並全部重建"
-      },
-      {
-        "command": "side.showContextMap",
-        "title": "S-IDE: 顯示 Context Map"
-      },
-      {
-        "command": "side.showManifestDiff",
-        "title": "S-IDE: 顯示上次的 Manifest 變動"
-      },
       {
         "command": "side.syncDocs",
         "title": "S-IDE: 同步語義文件",
@@ -111,7 +55,13 @@
       },
       {
         "command": "side.rebuildDocs",
-        "title": "S-IDE: 重建全部語義文件"
+        "title": "S-IDE: 重建全部語義文件",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "side.setApiKey",
+        "title": "S-IDE: 設定 API Key",
+        "icon": "$(key)"
       }
     ],
     "menus": {
@@ -126,6 +76,10 @@
         {
           "command": "side.syncDocs",
           "when": "workspaceFolderCount > 0"
+        },
+        {
+          "command": "side.rebuildDocs",
+          "when": "workspaceFolderCount > 0"
         }
       ]
     }
@@ -134,7 +88,6 @@
     "compile": "tsc -p .",
     "watch": "tsc -w -p .",
     "check": "node scripts/check-layering.mjs",
-    "run": "node scripts/run.mjs",
     "vscode:prepublish": "tsc -p ."
   },
   "devDependencies": {

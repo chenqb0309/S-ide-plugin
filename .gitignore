@@ -8,9 +8,6 @@ dist/
 bin/
 obj/
 
-# 生成物（可拋棄）：.sem 是唯一真相，這裡的東西刪掉會自動重建
-.semantic_backend/
-
-# 工具
+# 測試
 .vscode-test/
 *.log
