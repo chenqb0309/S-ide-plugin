@@ -9,9 +9,12 @@ import type { MemberDoc } from './types';
  * 這樣 VS Code、GitHub、Obsidian 都能正確跳轉。
  */
 
-export const DOC_VERSION = 3;
+export const DOC_VERSION = 4;
 export const MARKER_FILE = '.semrc.json';
 export const INDEX_FILE = 'index.md';
+
+/** 簡單屬性的彙總表標題（不經 AI，完全由程式產生） */
+export const PROPS_HEADING = '屬性一覽';
 
 export interface CallLink {
   id: string;
@@ -37,6 +40,19 @@ export function headingSlug(text: string): string {
 
 export function renderClassHeading(className: string): string {
   return `## ${className}`;
+}
+
+/** 簡單屬性的彙總表：不花 AI token，改一個就重寫這個小表。 */
+export function renderPropsTable(props: ReadonlyArray<{ name: string; type: string }>): string {
+  const lines = [`### ${PROPS_HEADING}`, '', '| 名稱 | 型別 |', '| --- | --- |'];
+  for (const p of [...props].sort((a, b) => a.name.localeCompare(b.name))) {
+    lines.push(`| ${p.name} | ${p.type || '—'} |`);
+  }
+  return lines.join('\n');
+}
+
+export function propsAnchor(): string {
+  return headingSlug(PROPS_HEADING);
 }
 
 /**
@@ -115,12 +131,13 @@ export function parseBlocks(md: string): Map<string, string> {
 /** 組回整份檔案。未變動的區塊原樣接回，不重新序列化。 */
 export function renderFile(
   relCs: string,
-  classes: ReadonlyArray<{ name: string; blocks: string[] }>,
+  classes: ReadonlyArray<{ name: string; blocks: string[]; props?: Array<{ name: string; type: string }> }>,
 ): string {
   const parts: string[] = [renderFileHeader(relCs)];
 
   for (const cls of classes) {
     parts.push(renderClassHeading(cls.name));
+    if (cls.props?.length) parts.push(renderPropsTable(cls.props));
     for (const block of cls.blocks) parts.push(block);
   }
 

@@ -1,5 +1,6 @@
 export type { MemberKind, MemberDoc, ClassDoc, FileDoc, ProseMap } from './types';
 export { slug, typeSlug, memberId, classAnchor, paramTypesOf } from './id';
+export { bareName, typeOf, clampType, isTrivialProperty } from './naming';
 export {
   DOC_VERSION,
   INDEX_FILE,
@@ -13,6 +14,9 @@ export {
   hasProse,
   headingSlug,
   uniqueHeading,
+  renderPropsTable,
+  propsAnchor,
+  PROPS_HEADING,
   type CallLink,
   type IndexEntry,
 } from './markdown';

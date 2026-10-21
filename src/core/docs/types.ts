@@ -10,6 +10,8 @@ export interface MemberDoc {
   anchor: string;
   kind: MemberKind;
   name: string;
+  /** 參數型別（多載時用來組成可讀的標題） */
+  params: string[];
   /** 給人看的簽章，例如 decimal CalculateFee(Order order) */
   signature: string;
   /** 0-based，含頭不含尾 */
@@ -29,6 +31,8 @@ export interface ClassDoc {
   startLine: number;
   endLine: number;
   members: MemberDoc[];
+  /** 簡單 auto-property（`{ get; set; }`）不進 AI，只列成表 */
+  props: Array<{ name: string; type: string }>;
 }
 
 /** 一個 .cs 對應一份 .md。 */

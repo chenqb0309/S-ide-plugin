@@ -177,19 +177,19 @@ async function runSync(
   const pending: Array<{ abs: string; text: string; relMd: string }> = [];
   const missingProse: string[] = [];
 
-  // 呼叫圖需要「所有已建文件的成員」當節點，否則增量時會漏掉指向未變動檔案的邊。
-  const universe = new Set<string>(targets.keys());
-  for (const relMd of core.docs.listDocFiles(docsRoot)) {
-    universe.add(core.docs.csRelFromMd(relMd, relDocsDir));
-  }
+  // 全量：每一輪都要完整圖，用 references 反推（每個成員一次查詢）。
+  // 增量：outgoing 只取決於「呼叫者自己的 body」，所以只掃變動檔案裡的呼叫點，
+  //       用 definition 精準解析——不需要全域圖，也不需要快取。
+  const universe = decision.mode === 'full' ? collectUniverse(targets, docsRoot, relDocsDir) : [...targets.keys()];
 
   const graph = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'S-IDE：建立呼叫圖', cancellable: true },
     async (progress, token) => {
-      progress.report({ message: `${universe.size} 個檔案` });
-      return buildCallGraph(index, root, [...universe], (rel, increment) => {
-        progress.report({ message: rel, increment });
-      }, token, (line) => log(deps, line));
+      const tick = (rel: string, increment: number): void => progress.report({ message: rel, increment });
+      const logLine = (line: string): void => log(deps, line);
+      return decision.mode === 'full'
+        ? buildCallGraph(index, root, universe, tick, token, logLine)
+        : buildCallGraphLocal(index, root, universe, tick, token, logLine);
     },
   );
 
@@ -288,7 +288,10 @@ async function writeOne(
   }
 
   const currentAnchors = new Set<string>();
-  for (const cls of fileDoc.classes) for (const m of cls.members) currentAnchors.add(m.anchor);
+  for (const cls of fileDoc.classes) {
+    if (cls.props.length) currentAnchors.add(core.docs.propsAnchor());
+    for (const m of cls.members) currentAnchors.add(m.anchor);
+  }
   const currentClasses = fileDoc.classes.map((c) => c.name);
   const oldClasses = core.docs.classesIn(oldText);
   const classChanged =
@@ -311,6 +314,7 @@ async function writeOne(
 
   const classes = fileDoc.classes.map((cls) => ({
     name: cls.name,
+    props: cls.props,
     blocks: cls.members.map((member) => {
       const old = oldBlocks.get(member.anchor);
       if (old && !changed.has(member.id) && core.docs.hasProse(old)) return old;
@@ -423,7 +427,8 @@ function toFileDoc(
   symbols: readonly vscode.DocumentSymbol[],
 ): core.docs.FileDoc {
   const classes: core.docs.ClassDoc[] = [];
-  const usedAnchors = new Set<string>();
+  /** 檔案內的名稱計數：用來決定多載要不要把參數型別寫進標題 */
+  const nameCounts = new Map<string, number>();
 
   const visit = (symbol: vscode.DocumentSymbol, outer: string[]): void => {
     const isType = CLASS_KINDS.has(symbol.kind);
@@ -431,31 +436,43 @@ function toFileDoc(
 
     if (isType) {
       const members: core.docs.MemberDoc[] = [];
+      const props: Array<{ name: string; type: string }> = [];
+
       for (const child of symbol.children ?? []) {
         // field 是實作細節（_context、_dbSet），不是業務節點
         if (!MEMBER_KINDS.has(child.kind)) continue;
 
         const raw = child.detail || child.name;
-        const bare = bareName(raw);
+        const bare = core.docs.bareName(raw);
         // C# 有時把建構子回報成 Method，名字會等於 class 名
         const isCtor = child.kind === vscode.SymbolKind.Constructor || bare === symbol.name;
         const name = isCtor ? 'ctor' : bare;
-        const { heading, anchor } = core.docs.uniqueHeading(name, usedAnchors);
+        const code = doc.getText(child.range);
+        const params = core.docs.paramTypesOf(raw);
 
+        // 純 auto-property 不進 AI，只列進「屬性一覽」
+        if (child.kind === vscode.SymbolKind.Property && core.docs.isTrivialProperty(code)) {
+          props.push({ name, type: core.docs.typeOf(raw) });
+          continue;
+        }
+
+        nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
         members.push({
-          id: core.docs.memberId(path.join('.'), name, core.docs.paramTypesOf(raw)),
-          heading,
-          anchor,
+          id: core.docs.memberId(path.join('.'), name, params),
+          heading: name,
+          anchor: '',
           kind: child.kind === vscode.SymbolKind.Property ? 'property' : 'method',
           name,
+          params,
           signature: raw,
           startLine: child.range.start.line,
           endLine: child.range.end.line,
           nameLine: child.selectionRange.start.line,
           nameCharacter: child.selectionRange.start.character,
-          code: doc.getText(child.range),
+          code,
         });
       }
+
       members.sort((a, b) => a.startLine - b.startLine);
       classes.push({
         name: symbol.name,
@@ -463,6 +480,7 @@ function toFileDoc(
         startLine: symbol.range.start.line,
         endLine: symbol.range.end.line,
         members,
+        props,
       });
     }
 
@@ -470,19 +488,126 @@ function toFileDoc(
   };
 
   for (const symbol of symbols) visit(symbol, []);
+
+  // 第二輪才決定標題：多載要把參數型別寫進去，才會是 `Save (Product)` 而不是 `Save (2)`
+  const usedAnchors = new Set<string>();
+  for (const cls of classes) {
+    for (const m of cls.members) {
+      const duplicated = (nameCounts.get(m.name) ?? 0) > 1;
+      const label =
+        duplicated && m.params.length ? `${m.name} (${m.params.map(core.docs.clampType).join(', ')})` : m.name;
+      const { heading, anchor } = core.docs.uniqueHeading(label, usedAnchors);
+      m.heading = heading;
+      m.anchor = anchor;
+    }
+  }
+
   classes.sort((a, b) => a.startLine - b.startLine);
   return { relCs, relMd, classes };
 }
 
-/** `Foo(int) : void` → `Foo`；`Name : string` → `Name` */
-function bareName(raw: string): string {
-  const noParams = raw.split('(')[0];
-  return noParams.split(' : ')[0].trim() || raw.trim();
+/** 全量時要覆蓋「所有已建文件」的成員，否則跨檔連結會漏。 */
+function collectUniverse(
+  targets: Map<string, 'full' | 'diff'>,
+  docsRoot: string,
+  relDocsDir: string,
+): string[] {
+  const all = new Set<string>(targets.keys());
+  for (const relMd of core.docs.listDocFiles(docsRoot)) {
+    all.add(core.docs.csRelFromMd(relMd, relDocsDir));
+  }
+  return [...all];
+}
+
+/** 這些不是呼叫，掃 body 時要跳過。 */
+const NOT_CALLS = new Set([
+  'if', 'for', 'foreach', 'while', 'switch', 'catch', 'using', 'return', 'nameof', 'typeof', 'sizeof',
+  'new', 'lock', 'fixed', 'checked', 'unchecked', 'throw', 'await', 'base', 'this', 'when', 'get', 'set',
+  'init', 'value', 'default', 'is', 'as', 'in', 'out', 'ref',
+]);
+
+/**
+ * 增量用：outgoing 的來源是「呼叫者的 body」，所以只掃變動檔案裡的呼叫點，
+ * 每個呼叫點用 definition 精準解析（不是字串比對）。
+ *
+ * 成本＝變動檔案的呼叫點數，與專案大小無關。
+ */
+async function buildCallGraphLocal(
+  index: SymbolIndex,
+  root: string,
+  relFiles: readonly string[],
+  tick: (rel: string, increment: number) => void,
+  token: vscode.CancellationToken,
+  log: (line: string) => void,
+): Promise<Map<string, core.docs.CallLink[]>> {
+  const outgoing = new Map<string, core.docs.CallLink[]>();
+  const callRe = /\b([A-Za-z_]\w*)\s*\(/g;
+
+  let queries = 0;
+  let edges = 0;
+  let failed = 0;
+
+  for (const relCs of relFiles) {
+    if (token.isCancellationRequested) break;
+    tick(relCs, relFiles.length ? 100 / relFiles.length : 0);
+
+    const fileDoc = await index.get(path.join(root, relCs));
+    const uri = await index.uriOf(path.join(root, relCs));
+    if (!fileDoc || !uri) continue;
+
+    for (const cls of fileDoc.classes) {
+      for (const member of cls.members) {
+        if (member.kind === 'property') continue;
+
+        const seen = new Set<number>();
+        callRe.lastIndex = 0;
+        let hit: RegExpExecArray | null;
+
+        while ((hit = callRe.exec(member.code))) {
+          const name = hit[1];
+          if (NOT_CALLS.has(name)) continue;
+
+          const at = hit.index;
+          if (seen.has(at)) continue;
+          seen.add(at);
+
+          const pos = positionInMember(member, at);
+          queries += 1;
+
+          try {
+            const defs = await vscode.commands.executeCommand<vscode.Location[]>(
+              'vscode.executeDefinitionProvider',
+              uri,
+              pos,
+            );
+            for (const def of defs ?? []) {
+              if (!def.uri.fsPath.toLowerCase().endsWith('.cs')) continue;
+              const target = await index.idAt(def.uri.fsPath, def.range.start.line);
+              if (!target || target.id === member.id) continue;
+              const list = outgoing.get(member.id) ?? [];
+              list.push({ id: target.id, label: target.label, relMd: target.relMd, anchor: target.anchor });
+              outgoing.set(member.id, list);
+              edges += 1;
+            }
+          } catch {
+            failed += 1;
+          }
+        }
+      }
+    }
+  }
+
+  log(`呼叫圖（增量）：${queries} 個呼叫點，${edges} 條邊、${failed} 次失敗`);
+  return outgoing;
+}
+
+/** 把「成員程式碼內的位移」換算成文件的絕對位置。 */
+function positionInMember(member: core.docs.MemberDoc, offset: number): vscode.Position {
+  const before = member.code.slice(0, offset).split('\n');
+  return new vscode.Position(member.startLine + before.length - 1, before[before.length - 1].length);
 }
 
 /**
- * 用 references 反推呼叫圖。
- *
  * C# 的 call hierarchy 在部分環境沒有註冊（prepare 一律回空），
  * 但 references 是好的（CodeLens 的「N 個參考」就是它算的）。
  *
