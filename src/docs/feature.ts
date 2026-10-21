@@ -494,6 +494,7 @@ function toFileDoc(
       members.sort((a, b) => a.startLine - b.startLine);
       classes.push({
         name: symbol.name,
+        heading: symbol.name,
         anchor: core.docs.classAnchor(path.join('.')),
         isInterface: symbol.kind === vscode.SymbolKind.Interface,
         startLine: symbol.range.start.line,
@@ -520,6 +521,14 @@ function toFileDoc(
       m.heading = heading;
       m.anchor = anchor;
     }
+  }
+
+  // 第三輪：類別標題也要唯一（巢狀類別可能同名），並與檔頭目錄的 anchor 對齊
+  const usedClassAnchors = new Set<string>();
+  for (const cls of classes) {
+    const { heading, anchor } = core.docs.uniqueHeading(cls.name, usedClassAnchors);
+    cls.heading = heading;
+    cls.anchor = anchor;
   }
 
   classes.sort((a, b) => a.startLine - b.startLine);

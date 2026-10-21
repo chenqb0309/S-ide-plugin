@@ -27,6 +27,7 @@ export interface MemberDoc {
 /** 一個 class 在文件中的容器。class 本身不是可獨立重寫的節點。 */
 export interface ClassDoc {
   name: string;
+  heading: string;
   anchor: string;
   /** 介面：用來在「介面 + 實作」同時被回報時決定連哪一個 */
   isInterface: boolean;

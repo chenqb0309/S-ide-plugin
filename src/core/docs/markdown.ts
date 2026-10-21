@@ -9,7 +9,7 @@ import type { MemberDoc } from './types';
  * 這樣 VS Code、GitHub、Obsidian 都能正確跳轉。
  */
 
-export const DOC_VERSION = 5;
+export const DOC_VERSION = 6;
 export const MARKER_FILE = '.semrc.json';
 export const INDEX_FILE = 'index.md';
 
@@ -87,13 +87,17 @@ export function renderMember(
   return lines.join('\n');
 }
 
-export function renderFileHeader(relCs: string, classNames: readonly string[] = []): string {
-  const lines = [
-    `# ${relCs.split('/').pop() ?? relCs}`,
-    '',
-    `<!-- source: ${relCs} -->`,
-  ];
-  if (classNames.length) lines.push('', classNames.join(' · '));
+export function renderFileHeader(
+  relCs: string,
+  classes: ReadonlyArray<{ name: string; anchor: string }> = [],
+): string {
+  const lines = [`# ${relCs.split('/').pop() ?? relCs}`, '', `<!-- source: ${relCs} -->`];
+
+  if (classes.length) {
+    const toc = classes.map((c) => `[${c.name}](#${c.anchor})`).join(' · ');
+    lines.push('', `**類別**：${toc}`);
+  }
+
   lines.push(
     '',
     '> 本檔由 S-IDE 從原始碼產生。**請勿手動編輯**；改完 code 後執行「S-IDE: 同步語義文件」。',
@@ -122,7 +126,8 @@ export function parseBlocks(md: string): Map<string, string> {
       current = { anchor: headingSlug(member[1]), buf: [line] };
       continue;
     }
-    if (/^##\s+/.test(line) || /^#\s+/.test(line)) {
+    // 類別之間的分隔線不屬於任何區塊，否則會黏在上一個 block 上、下次同步重複寫入
+    if (/^---\s*$/.test(line) || /^##\s+/.test(line) || /^#\s+/.test(line)) {
       flush();
       continue;
     }
@@ -135,15 +140,27 @@ export function parseBlocks(md: string): Map<string, string> {
 /** 組回整份檔案。未變動的區塊原樣接回，不重新序列化。 */
 export function renderFile(
   relCs: string,
-  classes: ReadonlyArray<{ name: string; blocks: string[]; props?: Array<{ name: string; type: string }> }>,
+  classes: ReadonlyArray<{
+    name: string;
+    heading?: string;
+    anchor?: string;
+    blocks: string[];
+    props?: Array<{ name: string; type: string }>;
+  }>,
 ): string {
-  const parts: string[] = [renderFileHeader(relCs, classes.map((c) => c.name))];
+  const toc = classes.map((c) => ({
+    name: c.name,
+    anchor: c.anchor ?? headingSlug(c.heading ?? c.name),
+  }));
+  const parts: string[] = [renderFileHeader(relCs, toc)];
 
-  for (const cls of classes) {
-    parts.push(renderClassHeading(cls.name));
+  classes.forEach((cls, index) => {
+    // 類別之間用分隔線隔開，滑動時才看得出「這一節結束了」
+    if (index > 0) parts.push('---');
+    parts.push(renderClassHeading(cls.heading ?? cls.name));
     if (cls.props?.length) parts.push(renderPropsTable(cls.props));
     for (const block of cls.blocks) parts.push(block);
-  }
+  });
 
   return parts.join('\n\n') + '\n';
 }
