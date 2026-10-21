@@ -14,46 +14,28 @@ const KEY_SECRET = 'side.apiKey';
 
 let ctx: vscode.ExtensionContext;
 let out: vscode.OutputChannel;
-let status: vscode.StatusBarItem;
 let tree: DocsTreeProvider;
 
 export function activate(context: vscode.ExtensionContext): void {
   ctx = context;
   out = vscode.window.createOutputChannel('S-IDE');
 
-  status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  status.command = 'side.syncDocs';
-  status.text = '$(book) semDocs';
-  status.tooltip = 'S-IDE：同步語義文件（code → Markdown）';
-
   tree = new DocsTreeProvider(workspaceRoot, docsDir);
 
   context.subscriptions.push(
     out,
-    status,
     vscode.window.registerTreeDataProvider('side.docs', tree),
-    vscode.workspace.onDidChangeWorkspaceFolders(() => {
-      syncStatusVisibility();
-      tree.refresh();
-    }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => tree.refresh()),
     registerCommands(),
   );
 
-  syncStatusVisibility();
-
   out.appendLine('S-IDE 已啟用。');
   out.appendLine(`  工作區：${workspaceRoot() ?? '(未開啟資料夾)'}`);
-  out.appendLine('  semDocs：點狀態列「semDocs」或側邊欄的「同步語義文件」');
+  out.appendLine('  semDocs：從側邊欄按「同步語義文件」');
 }
 
 export function deactivate(): void {
   /* nothing to do */
-}
-
-/** 沒有開資料夾時就不顯示，避免按了只得到錯誤。 */
-function syncStatusVisibility(): void {
-  if (workspaceRoot()) status.show();
-  else status.hide();
 }
 
 function registerCommands(): vscode.Disposable {
@@ -88,7 +70,7 @@ function registerCommands(): vscode.Disposable {
 }
 
 function docsDeps(): docsFeature.DocsDeps {
-  return { workspaceRoot, config, out, secrets: ctx.secrets, status };
+  return { workspaceRoot, config, out, secrets: ctx.secrets };
 }
 
 function workspaceRoot(): string | undefined {

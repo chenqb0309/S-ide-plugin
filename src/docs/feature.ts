@@ -20,7 +20,6 @@ export interface DocsDeps {
   config: () => vscode.WorkspaceConfiguration;
   out: vscode.OutputChannel;
   secrets: vscode.SecretStorage;
-  status: vscode.StatusBarItem;
 }
 
 interface RunStats {
@@ -60,7 +59,6 @@ export async function syncDocs(deps: DocsDeps, mode: 'auto' | 'full' = 'auto'): 
   }
 
   running = true;
-  deps.status.text = '$(sync~spin) semDocs';
 
   try {
     const stats = await runSync(deps, root, mode, ai);
@@ -72,7 +70,6 @@ export async function syncDocs(deps: DocsDeps, mode: 'auto' | 'full' = 'auto'): 
     void vscode.window.showErrorMessage(`S-IDE：${msg}`);
   } finally {
     running = false;
-    deps.status.text = '$(book) semDocs';
     const next = queued;
     queued = undefined;
     if (next) void syncDocs(deps, next);
