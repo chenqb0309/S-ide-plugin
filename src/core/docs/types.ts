@@ -15,6 +15,9 @@ export interface MemberDoc {
   /** 0-based，含頭不含尾 */
   startLine: number;
   endLine: number;
+  /** 識別字本身的位置（DocumentSymbol.selectionRange）——問 LSP 時要落在這裡 */
+  nameLine: number;
+  nameCharacter: number;
   /** 原始碼切片，餵給 AI 用 */
   code: string;
 }

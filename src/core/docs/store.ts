@@ -45,6 +45,13 @@ export function mdRelPath(relCs: string, relDocsDir: string): string {
   return `${relDocsDir.replace(/\/+$/, '')}/${withoutExt}.md`;
 }
 
+/** `semDocs/Services/A.md` → `Services/A.cs` */
+export function csRelFromMd(relMd: string, relDocsDir: string): string {
+  const prefix = relDocsDir.replace(/\/+$/, '') + '/';
+  const rest = relMd.toLowerCase().startsWith(prefix.toLowerCase()) ? relMd.slice(prefix.length) : relMd;
+  return rest.replace(/\.md$/i, '.cs');
+}
+
 /** 遞迴列出目錄下所有 .md（相對路徑，正斜線），排除 index.md。 */
 export function listDocFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];

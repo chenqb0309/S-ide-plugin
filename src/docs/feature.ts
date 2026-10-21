@@ -177,6 +177,22 @@ async function runSync(
   const pending: Array<{ abs: string; text: string; relMd: string }> = [];
   const missingProse: string[] = [];
 
+  // 呼叫圖需要「所有已建文件的成員」當節點，否則增量時會漏掉指向未變動檔案的邊。
+  const universe = new Set<string>(targets.keys());
+  for (const relMd of core.docs.listDocFiles(docsRoot)) {
+    universe.add(core.docs.csRelFromMd(relMd, relDocsDir));
+  }
+
+  const graph = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'S-IDE：建立呼叫圖', cancellable: true },
+    async (progress, token) => {
+      progress.report({ message: `${universe.size} 個檔案` });
+      return buildCallGraph(index, root, [...universe], (rel, increment) => {
+        progress.report({ message: rel, increment });
+      }, token, (line) => log(deps, line));
+    },
+  );
+
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'S-IDE：同步語義文件', cancellable: true },
     async (progress, token) => {
@@ -202,7 +218,7 @@ async function runSync(
           }
         }
 
-        const out = await writeOne(deps, root, docsRoot, relDocsDir, fileDoc, changed, ai, index, missingProse);
+        const out = await writeOne(deps, root, docsRoot, relDocsDir, fileDoc, changed, ai, graph, missingProse);
         if (out) {
           pending.push(out);
           stats.rewritten += 1;
@@ -254,7 +270,7 @@ async function writeOne(
   fileDoc: core.docs.FileDoc,
   changed: Set<string>,
   ai: core.docs.DocAiConfig,
-  index: SymbolIndex,
+  graph: Map<string, core.docs.CallLink[]>,
   missingProse: string[],
 ): Promise<{ abs: string; text: string; relMd: string } | undefined> {
   const mdAbs = path.join(root, fileDoc.relMd);
@@ -282,28 +298,6 @@ async function writeOne(
 
   if (!needs.length && oldText && !structureChanged) return undefined;
 
-  // 呼叫鏈：只對要重寫的節點問（CallHierarchy 是 round-trip，很貴）
-  const calls = new Map<string, core.docs.CallLink[]>();
-  let linked = 0;
-  let failed = 0;
-  for (const member of needs) {
-    const result = await outgoingLinks(root, fileDoc.relCs, member, index);
-    if (result.state === 'ok') {
-      linked += 1;
-      calls.set(member.id, result.links);
-    } else {
-      failed += 1;
-    }
-  }
-  if (needs.length && linked === 0) {
-    log(
-      deps,
-      `  ⚠️  ${fileDoc.relCs}：${needs.length} 個節點都拿不到呼叫鏈（prepare/outgoing 皆空）——語言伺服器可能不支援`,
-    );
-  } else if (failed) {
-    log(deps, `  ⚠️  ${fileDoc.relCs}：${failed}/${needs.length} 個節點沒有呼叫鏈`);
-  }
-
   let prose: core.docs.ProseMap = new Map();
   if (needs.length) {
     const items = needs.map((m) => ({ id: m.id, signature: m.signature, code: m.code }));
@@ -322,7 +316,7 @@ async function writeOne(
       if (old && !changed.has(member.id) && core.docs.hasProse(old)) return old;
 
       // 有變動但這次拿不到說明時，寧可留白（會被回報），也不要沿用舊的可能已錯的敘述
-      const text = core.docs.renderMember(member, prose.get(member.id), calls.get(member.id) ?? [], fileDoc.relMd);
+      const text = core.docs.renderMember(member, prose.get(member.id), graph.get(member.id) ?? [], fileDoc.relMd);
       return text;
     }),
   }));
@@ -357,11 +351,27 @@ const MEMBER_KINDS = new Set<vscode.SymbolKind>([
 
 class SymbolIndex {
   private readonly cache = new Map<string, core.docs.FileDoc | null>();
+  private readonly uris = new Map<string, vscode.Uri>();
 
   constructor(
     private readonly root: string,
     private readonly relDocsDir: string,
   ) {}
+
+  /** 用「實際被打開的那份文件」的 uri，避免自己重拼造成 LSP 對不上。 */
+  async uriOf(absPath: string): Promise<vscode.Uri | undefined> {
+    const key = absPath.toLowerCase();
+    const cached = this.uris.get(key);
+    if (cached) return cached;
+
+    try {
+      const textDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
+      this.uris.set(key, textDoc.uri);
+      return textDoc.uri;
+    } catch {
+      return undefined;
+    }
+  }
 
   async get(absPath: string): Promise<core.docs.FileDoc | undefined> {
     const key = absPath.toLowerCase();
@@ -374,6 +384,7 @@ class SymbolIndex {
     let doc: core.docs.FileDoc | undefined;
     try {
       const textDoc = await vscode.workspace.openTextDocument(vscode.Uri.file(absPath));
+      this.uris.set(key, textDoc.uri);
       const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
         'vscode.executeDocumentSymbolProvider',
         textDoc.uri,
@@ -440,6 +451,8 @@ function toFileDoc(
           signature: raw,
           startLine: child.range.start.line,
           endLine: child.range.end.line,
+          nameLine: child.selectionRange.start.line,
+          nameCharacter: child.selectionRange.start.character,
           code: doc.getText(child.range),
         });
       }
@@ -467,54 +480,95 @@ function bareName(raw: string): string {
   return noParams.split(' : ')[0].trim() || raw.trim();
 }
 
-/** 對一個節點問 VS Code 的 CallHierarchy，拿它呼叫了誰。 */
-async function outgoingLinks(
-  root: string,
-  relCs: string,
-  member: core.docs.MemberDoc,
+/**
+ * 用 references 反推呼叫圖。
+ *
+ * C# 的 call hierarchy 在部分環境沒有註冊（prepare 一律回空），
+ * 但 references 是好的（CodeLens 的「N 個參考」就是它算的）。
+ *
+ * 做法：對每個成員問「誰參考我」→ 每個參考位置回推它落在哪個成員裡 → 得到 caller → callee。
+ */
+async function buildCallGraph(
   index: SymbolIndex,
-): Promise<{ state: 'ok' | 'empty' | 'error'; links: core.docs.CallLink[] }> {
-  try {
-    const uri = vscode.Uri.file(path.join(root, relCs));
-    const position = namePosition(member);
-    const items = await vscode.commands.executeCommand<vscode.CallHierarchyItem[]>(
-      'vscode.prepareCallHierarchy',
-      uri,
-      position,
-    );
-    if (!items?.length) return { state: 'empty', links: [] };
+  root: string,
+  relFiles: readonly string[],
+  tick: (rel: string, increment: number) => void,
+  token: vscode.CancellationToken,
+  log: (line: string) => void,
+): Promise<Map<string, core.docs.CallLink[]>> {
+  const outgoing = new Map<string, core.docs.CallLink[]>();
+  const members: Array<{ relCs: string; relMd: string; member: core.docs.MemberDoc; label: string }> = [];
 
-    const calls = await vscode.commands.executeCommand<vscode.CallHierarchyOutgoingCall[]>(
-      'vscode.provideOutgoingCalls',
-      items[0],
-    );
-    if (!calls?.length) return { state: 'empty', links: [] };
-
-    const links: core.docs.CallLink[] = [];
-    for (const call of calls) {
-      const target = await index.idAt(call.to.uri.fsPath, call.to.range.start.line);
-      if (target) links.push({ id: target.id, label: target.label, relMd: target.relMd, anchor: target.anchor });
+  for (const relCs of relFiles) {
+    const fileDoc = await index.get(path.join(root, relCs));
+    if (!fileDoc) continue;
+    for (const cls of fileDoc.classes) {
+      for (const m of cls.members) {
+        members.push({ relCs, relMd: fileDoc.relMd, member: m, label: `${cls.name}.${m.name}` });
+      }
     }
-    return { state: 'ok', links };
-  } catch {
-    return { state: 'error', links: [] };
   }
+
+  let ok = 0;
+  let empty = 0;
+  let failed = 0;
+
+  for (const entry of members) {
+    if (token.isCancellationRequested) break;
+    tick(entry.relCs, members.length ? 100 / members.length : 0);
+
+    const uri = await index.uriOf(path.join(root, entry.relCs));
+    if (!uri) {
+      failed += 1;
+      continue;
+    }
+
+    let refs: vscode.Location[] | undefined;
+    try {
+      refs = await vscode.commands.executeCommand<vscode.Location[]>(
+        'vscode.executeReferenceProvider',
+        uri,
+        namePosition(entry.member),
+      );
+    } catch {
+      failed += 1;
+      continue;
+    }
+
+    if (!refs?.length) {
+      empty += 1;
+      continue;
+    }
+    ok += 1;
+
+    for (const ref of refs) {
+      const caller = await index.idAt(ref.uri.fsPath, ref.range.start.line);
+      if (!caller || caller.id === entry.member.id) continue;
+
+      const list = outgoing.get(caller.id) ?? [];
+      list.push({
+        id: entry.member.id,
+        label: entry.label,
+        relMd: entry.relMd,
+        anchor: entry.member.anchor,
+      });
+      outgoing.set(caller.id, list);
+    }
+  }
+
+  log(
+    `呼叫圖：${members.length} 個節點，${ok} 有參考、${empty} 無參考、${failed} 查詢失敗（${outgoing.size} 個有 outgoing）`,
+  );
+  return outgoing;
 }
 
 /**
- * CallHierarchy 需要「符號名稱的位置」，不是宣告開頭。
- * `public decimal CalculateFee(...)` 的第 0 欄是 `public`，問不到東西。
+ * LSP 要的是「識別字本身的位置」。
+ * 直接用 DocumentSymbol.selectionRange 的起點，不要自己從程式碼裡找字串——
+ * 建構子被改名成 `ctor` 之後就找不到了。
  */
 function namePosition(member: core.docs.MemberDoc): vscode.Position {
-  const code = member.code;
-  const idx = code.indexOf(member.name);
-  if (idx < 0) return new vscode.Position(member.startLine, 0);
-
-  const before = code.slice(0, idx);
-  const newlines = before.split('\n');
-  const line = member.startLine + newlines.length - 1;
-  const character = newlines[newlines.length - 1].length;
-  return new vscode.Position(line, character);
+  return new vscode.Position(member.nameLine, member.nameCharacter);
 }
 
 // ── AI 設定 ─────────────────────────────────────────────────────────────────

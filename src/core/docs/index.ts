@@ -36,6 +36,7 @@ export {
   readMarker,
   writeMarker,
   mdRelPath,
+  csRelFromMd,
   listDocFiles,
   classesIn,
   writeIndex,
