@@ -10,6 +10,8 @@ export type Lang = 'en' | 'zh-TW';
 export interface UiStrings {
   // extension
   activated: string;
+  noCsharp: string;
+  btnInstallCsharp: string;
   workspaceLine: (root: string) => string;
   noFolderOpen: string;
   sidebarHint: string;
@@ -86,6 +88,9 @@ export interface UiStrings {
 
 const EN: UiStrings = {
   activated: 'S-IDE is active.',
+  noCsharp:
+    'S-IDE needs the C# extension for symbols and references. Install it, then try again.',
+  btnInstallCsharp: 'Install C# Extension',
   workspaceLine: (root) => `  workspace: ${root}`,
   noFolderOpen: '(no folder open)',
   sidebarHint: '  semDocs: run "Sync Semantic Docs" from the sidebar',
@@ -165,6 +170,8 @@ const EN: UiStrings = {
 
 const ZH_TW: UiStrings = {
   activated: 'S-IDE 已啟用。',
+  noCsharp: 'S-IDE 需要 C# 擴充（ms-dotnettools.csharp）提供符號與 references。安裝後再試一次。',
+  btnInstallCsharp: '安裝 C# 擴充',
   workspaceLine: (root) => `  工作區：${root}`,
   noFolderOpen: '(未開啟資料夾)',
   sidebarHint: '  semDocs：從側邊欄按「同步語義文件」',

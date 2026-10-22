@@ -5,6 +5,7 @@
   "side.cmd.rebuild": "S-IDE: 重建全部語義文件",
   "side.cmd.settings": "S-IDE: 開啟設定",
   "side.cmd.setKey": "S-IDE: 設定 API Key",
+  "side.cmd.openSource": "S-IDE: 開啟文件原始碼",
   "side.cfg.language.desc": "產出文件與 AI 敘述的語言。",
   "side.cfg.language.en": "英文",
   "side.cfg.language.zh": "繁體中文",

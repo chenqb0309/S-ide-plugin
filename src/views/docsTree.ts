@@ -65,9 +65,11 @@ export class DocsTreeProvider implements vscode.TreeDataProvider<Node> {
     const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
     item.iconPath = new vscode.ThemeIcon('markdown');
     item.tooltip = node.rel;
+    item.contextValue = 'side.file';
     if (root) {
       item.command = {
-        command: 'vscode.open',
+        // 點一下就開渲染後的預覽；沒有 Markdown 擴充才退回原始碼
+        command: hasMarkdownPreview() ? 'markdown.showPreviewToSide' : 'vscode.open',
         title: this.ui().open,
         arguments: [vscode.Uri.file(path.join(root, node.rel))],
       };
@@ -114,6 +116,11 @@ export class DocsTreeProvider implements vscode.TreeDataProvider<Node> {
 
     return [];
   }
+}
+
+/** VS Code 內建的 Markdown 預覽；沒有它才退回原始碼。 */
+function hasMarkdownPreview(): boolean {
+  return !!vscode.extensions.getExtension('vscode.markdown-language-features');
 }
 
 /**

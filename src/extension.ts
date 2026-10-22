@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as docsFeature from './docs/feature';
 import { normalizeLang, uiFor, type Lang, type UiStrings } from './i18n';
@@ -60,11 +61,13 @@ function registerCommands(): vscode.Disposable {
     }),
 
     vscode.commands.registerCommand('side.syncDocs', async () => {
+      if (!(await ensureCsharp())) return;
       await docsFeature.syncDocs(docsDeps(), 'auto');
       tree.refresh();
     }),
 
     vscode.commands.registerCommand('side.rebuildDocs', async () => {
+      if (!(await ensureCsharp())) return;
       await docsFeature.syncDocs(docsDeps(), 'full');
       tree.refresh();
     }),
@@ -72,11 +75,31 @@ function registerCommands(): vscode.Disposable {
     vscode.commands.registerCommand('side.openSettings', async () => {
       await openSettingsPanel(ctx, () => tree.refresh());
     }),
+
+    // 樹節點的右鍵／行內按鈕：需要編輯時才開原始碼
+    vscode.commands.registerCommand('side.openSource', async (node?: { kind?: string; rel?: string }) => {
+      const root = workspaceRoot();
+      if (!root || !node?.rel) return;
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(path.join(root, node.rel)));
+    }),
   );
 }
 
 function docsDeps(): docsFeature.DocsDeps {
   return { workspaceRoot, config, out, secrets: ctx.secrets };
+}
+
+/** 沒有 C# 擴充就拿不到符號；先提示，不要讓使用者看到「跳過所有檔案」。 */
+async function ensureCsharp(): Promise<boolean> {
+  if (!workspaceRoot()) return true;
+  if (vscode.extensions.getExtension('ms-dotnettools.csharp')) return true;
+
+  const t = ui();
+  const action = await vscode.window.showWarningMessage(t.noCsharp, t.btnInstallCsharp);
+  if (action === t.btnInstallCsharp) {
+    await vscode.commands.executeCommand('workbench.extensions.search', 'ms-dotnettools.csharp');
+  }
+  return false;
 }
 
 function workspaceRoot(): string | undefined {

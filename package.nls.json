@@ -5,6 +5,7 @@
   "side.cmd.rebuild": "S-IDE: Rebuild All Semantic Docs",
   "side.cmd.settings": "S-IDE: Open Settings",
   "side.cmd.setKey": "S-IDE: Set API Key",
+  "side.cmd.openSource": "S-IDE: Open Source File",
   "side.cfg.language.desc": "Language of the generated documents and AI descriptions.",
   "side.cfg.language.en": "English",
   "side.cfg.language.zh": "Traditional Chinese",

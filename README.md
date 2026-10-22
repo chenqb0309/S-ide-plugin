@@ -1,64 +1,28 @@
 # S-IDE
 
-> 把既有的 C# 原始碼翻成「帶呼叫鏈的 Markdown 文件群」，讓人看得懂程式在做什麼。
+> Turn existing C# source code into a Markdown documentation set with call chains, so humans can understand what the code does.
 
-按一個按鈕（狀態列／命令面板／Source Control 標題列），在 `semDocs/` 產生對應的文件。
-code 是真相，Markdown 是可拋棄的投影。
+Code stays the source of truth. The Markdown is a disposable projection: a second view on top of the code, not a replacement for it.
 
-## 這個 repo 是什麼
+## What it does
 
-- VS Code 外掛
-- 主要對象：既有專案（legacy、沒人想動的那種）
-- 核心取捨：**拓撲由語言伺服器算，AI 只寫敘述**
-- 不含 `.sem` 規格管線（那條線在 `source/repos/s-ide`）
-
-## 目錄
+Click one button and get a `semDocs/` folder that mirrors your source tree:
 
 ```
-src/
-├─ extension.ts          # 只做接線
-├─ docs/feature.ts       # 符號、呼叫圖、寫檔
-└─ core/                 # 純 Node/TS，禁止 import 'vscode'
-   ├─ ai.ts              # OpenAI 相容呼叫（含 OpenCode Go 的 session header）
-   ├─ fsx.ts             # 檔案操作（禁用 fs.rmSync）
-   └─ docs/              # 文件模型、排版、增量、AI prompt
+semDocs/
+  index.md
+  Endpoints/
+    ProductEndpoints.md
+  Infrastructure/
+    Repositories/
+      Repository.md
 ```
 
-`npm run check` 會強制 `src/core/**` 不得相依 `vscode`。
+Every class becomes a section; every method and property becomes a heading with:
 
-## 開發
-
-```bash
-npm install
-npm run compile     # tsc
-npm run check       # 分層檢查
-```
-
-按 <kbd>F5</kbd> 開 Extension Development Host，開啟一個 C# 專案。
-
-## 設定
-
-| 設定 | 說明 |
-|---|---|
-| `side.language` | 產出語言：`en`（預設）或 `zh-TW`。影響產出文件、AI 敘述、Output、通知、側邊欄與設定頁 |
-
-> 命令標題／View 名稱／設定描述是 `package.json` 的靜態字串，只能跟 **VS Code 顯示語言**（`package.nls.*`）；執行期字串才跟 `side.language`。
-| `side.baseUrl` | OpenAI 相容端點，預設 `https://api.openai.com/v1` |
-| `side.model` | 模型名稱（空白會拒絕執行） |
-| `side.docsDir` | 輸出目錄，預設 `semDocs` |
-
-API Key 用命令 **`S-IDE: 設定 API Key`** 存進 `SecretStorage`，不會寫進 `settings.json`。
-
-常見端點：
-
-| 供應商 | `side.baseUrl` | 範例模型 |
-|---|---|---|
-| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| OpenCode Go | `https://opencode.ai/inference/go/openai/v1` | `glm-5.3-flash` |
-| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
-| Ollama | `http://localhost:11434/v1` | `qwen2.5-coder:7b` |
-
-## 文件長相
+- its signature
+- **pseudocode steps** (or a one-line summary for trivial members)
+- **call links** to other documented members
 
 ```markdown
 ### HandleAsync
@@ -68,20 +32,78 @@ API Key 用命令 **`S-IDE: 設定 API Key`** 存進 `SecretStorage`，不會寫
 2. Project each product into a response DTO
 3. Return the list
 
-- Calls → [IRepository<T>.GetAllAsync](../Core/Interfaces/IRepository.md#getallasync)
+- Calls → IRepository<T>.GetAllAsync
 ```
 
-- anchor = 標題 slug（標準 Markdown，VS Code／GitHub／Obsidian 都能跳）
-- 類別之間以 `---` 分隔，檔頭有類別目錄
-- 簡單 auto-property 集中成「Properties」表，不花 AI
-- 增量更新：只重寫有變動的節點，其餘原字節保留
-- `side.language` 可切換 `en`（預設）／`zh-TW`，文件標籤與 AI 敘述會一起換
+Call links are plain relative links (`../Path/File.md#anchor`), so they work in the VS Code preview, GitHub, and Obsidian.
 
-## 前置條件
+## Quick start
 
-- 需要 C# 語言伺服器（C# Dev Kit / OmniSharp）提供符號與 references
-- 沒有 API Key 不會執行（不產出「有結構、沒說明」的空殼）
+1. Install the [C# extension](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp) (required for symbols and references).
+2. Open a C# workspace.
+3. Click the **S-IDE** icon in the Activity Bar.
+4. Press the gear icon → pick a provider → paste your API key → **Test connection**.
+5. Press **Sync Semantic Docs**.
 
-## 授權
+The first run builds everything. After that, only changed members are rewritten — untouched blocks are copied byte-for-byte, so `git diff` stays readable.
 
-UNLICENSED（私有專案）
+Commit `semDocs/` once after the first run. That makes the incremental baseline stable.
+
+## Privacy
+
+**This extension sends C# source snippets to the OpenAI-compatible endpoint you configure.** Nothing is sent anywhere else. There is no telemetry, no analytics, and no server operated by this extension.
+
+Your API key is stored in VS Code's encrypted `SecretStorage`, never in `settings.json`.
+
+## Settings
+
+| Setting | Description |
+|---|---|
+| `side.language` | Output language: `en` (default) or `zh-TW` |
+| `side.baseUrl` | OpenAI-compatible endpoint |
+| `side.model` | Model name |
+| `side.docsDir` | Output folder (default `semDocs`) |
+
+Common endpoints:
+
+| Provider | Base URL | Example model |
+|---|---|---|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| OpenCode Go | `https://opencode.ai/inference/go/openai/v1` | `glm-5.3-flash` |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| Ollama | `http://localhost:11434/v1` | `qwen2.5-coder:7b` |
+
+Use a cheap, non-reasoning model. This task is many small requests with a strict output format; reasoning models mostly add cost and empty responses.
+
+## How it works
+
+- **Topology is computed, not generated.** Nodes come from VS Code's `DocumentSymbol`; call edges come from `executeReferenceProvider` (full build) or `executeDefinitionProvider` (incremental).
+- **AI only writes prose.** Links, anchors, and layout are produced by code, so a bad description can never break a link.
+- **Incremental by design.** `git status` plus `git diff` decide which members to rebuild. Unchanged blocks are reused verbatim.
+
+## Requirements
+
+- VS Code 1.90 or newer
+- The C# extension (`ms-dotnettools.csharp`)
+- An OpenAI-compatible API key
+
+## Known limitations
+
+- `Program.cs` with top-level statements produces no symbols, so it is skipped.
+- Partial classes produce one document per file.
+- A change to code that does not change the generated text leaves that file "pending" until the next document change is committed.
+- Large repositories make the first full build slow (one metadata query per member).
+
+## Development
+
+```bash
+npm install
+npm run compile
+npm run check     # enforces that src/core has no vscode dependency
+```
+
+Press <kbd>F5</kbd> to launch the Extension Development Host.
+
+## License
+
+MIT

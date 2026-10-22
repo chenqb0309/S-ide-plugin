@@ -4,8 +4,7 @@
   "description": "%side.description%",
   "version": "0.1.0",
   "publisher": "chenqb0309",
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "MIT",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -21,7 +20,7 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "onStartupFinished",
+    "onView:side.docs",
     "onCommand:side.syncDocs",
     "onCommand:side.rebuildDocs",
     "onCommand:side.setApiKey",
@@ -98,9 +97,21 @@
         "command": "side.setApiKey",
         "title": "%side.cmd.setKey%",
         "icon": "$(key)"
+      },
+      {
+        "command": "side.openSource",
+        "title": "%side.cmd.openSource%",
+        "icon": "$(go-to-file)"
       }
     ],
     "menus": {
+      "view/item/context": [
+        {
+          "command": "side.openSource",
+          "when": "view == side.docs && viewItem == side.file",
+          "group": "inline"
+        }
+      ],
       "view/title": [
         {
           "command": "side.syncDocs",

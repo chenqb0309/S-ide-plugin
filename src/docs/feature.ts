@@ -55,7 +55,7 @@ export async function syncDocs(deps: DocsDeps, mode: 'auto' | 'full' = 'auto'): 
     const action = await vscode.window.showErrorMessage(t.noApiConfig, t.btnSetKey, t.btnOpenSettings);
     if (action === t.btnSetKey) await vscode.commands.executeCommand('side.setApiKey');
     else if (action === t.btnOpenSettings) {
-      await vscode.commands.executeCommand('workbench.action.openSettings', 'side.model');
+      await vscode.commands.executeCommand('side.openSettings');
     }
     return;
   }
