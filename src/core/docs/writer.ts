@@ -5,6 +5,8 @@ export interface DocAiConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  /** 產出語言：影響 AI 寫的是英文還是中文 */
+  lang?: string;
 }
 
 export interface ProseItem {
@@ -37,7 +39,7 @@ export async function writeProse(
   items: readonly ProseItem[],
   log?: (line: string) => void,
 ): Promise<ProseResult> {
-  if (!cfg.apiKey || !cfg.model) throw new Error('尚未設定 API Key 或模型，無法產生說明');
+  if (!cfg.apiKey || !cfg.model) throw new Error('API key or model is not configured; cannot generate descriptions');
 
   const prose: ProseMap = new Map();
   const failed: string[] = [];
@@ -64,7 +66,7 @@ export async function writeProse(
       if (missing.length === batch.length && reported < 3) {
         reported += 1;
         log?.(
-          `  ⚠️  ${batch.length} 個節點拿不到說明 | ${meta} | body: ${raw.slice(0, 200).replace(/\s+/g, ' ')}`,
+          `  WARN  no description for ${batch.length} node(s) | ${meta} | body: ${raw.slice(0, 200).replace(/\s+/g, ' ')}`,
         );
       }
 
@@ -86,7 +88,7 @@ export async function writeProse(
       }
       if (reported < 3) {
         reported += 1;
-        log?.(`  ⚠️  請求失敗（${batch.length} 個節點）：${message.slice(0, 300)}`);
+        log?.(`  WARN  request failed (${batch.length} node(s)): ${message.slice(0, 300)}`);
       }
       for (const item of batch) failed.push(item.id);
     }
@@ -98,7 +100,7 @@ export async function writeProse(
 
   // 一句都沒拿到＝這次等於沒做事。不要寫出「有結構、沒說明」的文件。
   if (prose.size === 0) {
-    throw new Error('AI 沒有產生任何說明（模型回傳空結果），已中止同步。詳見上方診斷。');
+    throw new Error('AI returned no descriptions (empty result); sync aborted. See the diagnostics above.');
   }
 
   return { prose, failed };
@@ -129,25 +131,29 @@ async function callOnce(cfg: DocAiConfig, batch: readonly ProseItem[]): Promise<
         {
           role: 'system',
           content: [
-            '你是資深工程師，把 C# 濃縮成「人類看得懂的偽代碼」。',
+            'You are a senior engineer. Turn C# code into pseudocode that a human can read.',
             '',
-            '【形狀】',
-            'A. 有邏輯的方法 → 輸出字串陣列，每項是一個步驟（最多 7 步）。',
-            '   依執行順序排列；條件、計算、提早返回、寫入、丟例外都要寫成一步。',
-            'B. 只有單一動作（getter、單純轉發）→ 輸出一句話字串。',
-            'C. property → 一句話說明它的業務意義，不要寫「取得或設定」。',
+            '[Shape]',
+            'A. A method with logic -> an array of strings, one step per item (max 7).',
+            '   Follow execution order. Include conditions, calculations, early returns, writes, and thrown exceptions.',
+            'B. A single-action member (getter, simple forwarding) -> one sentence.',
+            'C. A property -> one sentence describing its business meaning. Never write "Gets or sets".',
             '',
-            '【規則】',
-            '1. 繁體中文，每個步驟 40 字以內。',
-            '2. 必須寫出具體門檻、數量、比例（例如「滿 1000 元免運」）。',
-            '3. 不要描述語法（if/foreach/變數宣告），要寫業務行為。',
-            '4. 不要重述參數與回傳型別，不要提 class 名稱。',
-            '5. 只寫程式碼裡確實存在的規則，不要推測、不要補充。',
-            '6. 不要 markdown 標記、不要編號前綴（1. 2.），系統會自己加。',
+            '[Rules]',
+            '1. ' +
+              (cfg.lang === 'zh-TW'
+                ? '以繁體中文輸出（台灣用語）。'
+                : 'Write in English.'),
+            '2. Include concrete thresholds, counts and ratios (e.g. "free shipping at 1000").',
+            '3. Describe business behavior, not syntax (no if/foreach/variable declarations).',
+            '4. Do not restate parameter or return types. Do not mention the class name.',
+            '5. Only describe what the code actually does. Never infer or embellish.',
+            '6. No markdown, no numbering prefixes. The renderer adds them.',
             '',
-            '【輸出】',
-            '只輸出 JSON 物件，鍵是 id，值是字串或字串陣列。必須包含每一個 id。',
-            '格式：{"id":"一句話"} 或 {"id":["步驟一","步驟二"]}',
+            '[Output]',
+            'Return a JSON object only. Keys are ids, values are a string or an array of strings.',
+            'Every input id must be present.',
+            'Example: {"id":"one sentence"} or {"id":["step one","step two"]}',
           ].join('\n'),
         },
         { role: 'user', content: JSON.stringify(payload) },

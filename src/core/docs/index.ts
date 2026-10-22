@@ -16,10 +16,10 @@ export {
   uniqueHeading,
   renderPropsTable,
   propsAnchor,
-  PROPS_HEADING,
   type CallLink,
   type IndexEntry,
 } from './markdown';
+export { labelsFor, type DocLang, type DocLabels } from './labels';
 export {
   isGitRepo,
   baselineCommit,
@@ -32,7 +32,16 @@ export {
   listCsFiles,
   type GitChange,
 } from './git';
-export { decide, touchedSources, isDeletion, isUntracked, changedMemberIds, type SyncMode, type Decision } from './plan';
+export {
+  decide,
+  touchedSources,
+  isDeletion,
+  isUntracked,
+  changedMemberIds,
+  type SyncMode,
+  type Decision,
+  type ReasonKey,
+} from './plan';
 export { writeProse, type DocAiConfig, type ProseItem, type ProseResult } from './writer';
 export {
   DOCS_DIR_DEFAULT,

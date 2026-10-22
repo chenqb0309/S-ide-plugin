@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { MemberDoc } from './types';
+import { labelsFor, type DocLabels } from './labels';
 
 /**
  * 文件模板。
@@ -9,12 +10,11 @@ import type { MemberDoc } from './types';
  * 這樣 VS Code、GitHub、Obsidian 都能正確跳轉。
  */
 
-export const DOC_VERSION = 6;
+export const DOC_VERSION = 7;
 export const MARKER_FILE = '.semrc.json';
 export const INDEX_FILE = 'index.md';
 
-/** 簡單屬性的彙總表標題（不經 AI，完全由程式產生） */
-export const PROPS_HEADING = '屬性一覽';
+const DEFAULT_LABELS = labelsFor('en');
 
 export interface CallLink {
   id: string;
@@ -43,16 +43,24 @@ export function renderClassHeading(className: string): string {
 }
 
 /** 簡單屬性的彙總表：不花 AI token，改一個就重寫這個小表。 */
-export function renderPropsTable(props: ReadonlyArray<{ name: string; type: string }>): string {
-  const lines = [`### ${PROPS_HEADING}`, '', '| 名稱 | 型別 |', '| --- | --- |'];
+export function renderPropsTable(
+  props: ReadonlyArray<{ name: string; type: string }>,
+  labels: DocLabels = DEFAULT_LABELS,
+): string {
+  const lines = [
+    `### ${labels.propsHeading}`,
+    '',
+    `| ${labels.colName} | ${labels.colType} |`,
+    '| --- | --- |',
+  ];
   for (const p of [...props].sort((a, b) => a.name.localeCompare(b.name))) {
     lines.push(`| ${p.name} | ${p.type || '—'} |`);
   }
   return lines.join('\n');
 }
 
-export function propsAnchor(): string {
-  return headingSlug(PROPS_HEADING);
+export function propsAnchor(labels: DocLabels = DEFAULT_LABELS): string {
+  return headingSlug(labels.propsHeading);
 }
 
 /**
@@ -63,6 +71,7 @@ export function renderMember(
   prose: string | string[] | undefined,
   calls: readonly CallLink[],
   fromRelMd: string,
+  labels: DocLabels = DEFAULT_LABELS,
 ): string {
   const lines: string[] = [];
   lines.push(`### ${member.heading}`);
@@ -81,7 +90,7 @@ export function renderMember(
   const unique = dedupe(calls);
   if (unique.length) {
     lines.push('');
-    for (const call of unique) lines.push(`- 呼叫 → [${call.label}](${docHref(fromRelMd, call)})`);
+    for (const call of unique) lines.push(`- ${labels.calls} → [${call.label}](${docHref(fromRelMd, call)})`);
   }
 
   return lines.join('\n');
@@ -90,18 +99,16 @@ export function renderMember(
 export function renderFileHeader(
   relCs: string,
   classes: ReadonlyArray<{ name: string; anchor: string }> = [],
+  labels: DocLabels = DEFAULT_LABELS,
 ): string {
   const lines = [`# ${relCs.split('/').pop() ?? relCs}`, '', `<!-- source: ${relCs} -->`];
 
   if (classes.length) {
     const toc = classes.map((c) => `[${c.name}](#${c.anchor})`).join(' · ');
-    lines.push('', `**類別**：${toc}`);
+    lines.push('', `**${labels.toc}**：${toc}`);
   }
 
-  lines.push(
-    '',
-    '> 本檔由 S-IDE 從原始碼產生。**請勿手動編輯**；改完 code 後執行「S-IDE: 同步語義文件」。',
-  );
+  lines.push('', `> ${labels.fileNote}`);
   return lines.join('\n');
 }
 
@@ -147,18 +154,19 @@ export function renderFile(
     blocks: string[];
     props?: Array<{ name: string; type: string }>;
   }>,
+  labels: DocLabels = DEFAULT_LABELS,
 ): string {
   const toc = classes.map((c) => ({
     name: c.name,
     anchor: c.anchor ?? headingSlug(c.heading ?? c.name),
   }));
-  const parts: string[] = [renderFileHeader(relCs, toc)];
+  const parts: string[] = [renderFileHeader(relCs, toc, labels)];
 
   classes.forEach((cls, index) => {
     // 類別之間用分隔線隔開，滑動時才看得出「這一節結束了」
     if (index > 0) parts.push('---');
     parts.push(renderClassHeading(cls.heading ?? cls.name));
-    if (cls.props?.length) parts.push(renderPropsTable(cls.props));
+    if (cls.props?.length) parts.push(renderPropsTable(cls.props, labels));
     for (const block of cls.blocks) parts.push(block);
   });
 
@@ -170,13 +178,13 @@ export interface IndexEntry {
   classes: string[];
 }
 
-export function renderIndex(entries: readonly IndexEntry[]): string {
+export function renderIndex(entries: readonly IndexEntry[], labels: DocLabels = DEFAULT_LABELS): string {
   const lines = [
-    '# 語義文件索引',
+    `# ${labels.indexTitle}`,
     '',
-    '> 由 S-IDE 產生。這裡只列檔案與類別，內容請點進各檔案。',
+    `> ${labels.indexNote}`,
     '',
-    '| 檔案 | 類別 |',
+    `| ${labels.colFile} | ${labels.colClasses} |`,
     '| --- | --- |',
   ];
 

@@ -13,9 +13,13 @@ export interface DecideInput {
   relDocsDir: string;
 }
 
+export type ReasonKey = 'noMarker' | 'versionMismatch' | 'noGit' | 'noCommits' | 'noChanges' | 'changed';
+
 export interface Decision {
   mode: SyncMode;
-  reason: string;
+  /** 只回 key，實際字串由呼叫端依 side.language 決定 */
+  reasonKey: ReasonKey;
+  reasonParams?: Record<string, string | number>;
 }
 
 /**
@@ -27,17 +31,17 @@ export interface Decision {
  * - 沒有任何 .cs 變動 → 什麼都不做（不要白燒 AI）
  */
 export function decide(input: DecideInput): Decision {
-  if (!input.hasMarker) return { mode: 'full', reason: '尚未建立 semDocs，執行全量建置' };
+  if (!input.hasMarker) return { mode: 'full', reasonKey: 'noMarker' };
   if (input.markerVersion !== DOC_VERSION) {
-    return { mode: 'full', reason: `文件模板版本 ${input.markerVersion} ≠ ${DOC_VERSION}，全量重建` };
+    return { mode: 'full', reasonKey: 'versionMismatch', reasonParams: { from: input.markerVersion, to: DOC_VERSION } };
   }
-  if (!input.hasGit) return { mode: 'full', reason: '此專案不是 git repo，無法比對變動，全量重建' };
-  if (!input.baseline) return { mode: 'full', reason: '此 repo 還沒有任何 commit，無從比較，全量重建' };
+  if (!input.hasGit) return { mode: 'full', reasonKey: 'noGit' };
+  if (!input.baseline) return { mode: 'full', reasonKey: 'noCommits' };
 
   const touched = new Set(touchedSources(input.changes, input.relDocsDir).map((c) => c.rel));
-  if (!touched.size) return { mode: 'none', reason: '自上次同步以來沒有任何 .cs 變動' };
+  if (!touched.size) return { mode: 'none', reasonKey: 'noChanges' };
 
-  return { mode: 'incremental', reason: `${touched.size} 個 .cs 有變動` };
+  return { mode: 'incremental', reasonKey: 'changed', reasonParams: { count: touched.size } };
 }
 
 /** 只留 .cs，且排除 docs 目錄自己。 */

@@ -40,6 +40,9 @@ npm run check       # 分層檢查
 
 | 設定 | 說明 |
 |---|---|
+| `side.language` | 產出語言：`en`（預設）或 `zh-TW`。影響產出文件、AI 敘述、Output、通知、側邊欄與設定頁 |
+
+> 命令標題／View 名稱／設定描述是 `package.json` 的靜態字串，只能跟 **VS Code 顯示語言**（`package.nls.*`）；執行期字串才跟 `side.language`。
 | `side.baseUrl` | OpenAI 相容端點，預設 `https://api.openai.com/v1` |
 | `side.model` | 模型名稱（空白會拒絕執行） |
 | `side.docsDir` | 輸出目錄，預設 `semDocs` |
@@ -61,17 +64,18 @@ API Key 用命令 **`S-IDE: 設定 API Key`** 存進 `SecretStorage`，不會寫
 ### HandleAsync
 `Task<ActionResult<List<ProductDto>>> HandleAsync(CancellationToken ct)`
 
-1. 從資料來源取得全部產品
-2. 將每筆產品轉為回應格式
-3. 回傳清單
+1. Fetch all products from the repository
+2. Project each product into a response DTO
+3. Return the list
 
-- 呼叫 → [IRepository<T>.GetAllAsync](../Core/Interfaces/IRepository.md#getallasync)
+- Calls → [IRepository<T>.GetAllAsync](../Core/Interfaces/IRepository.md#getallasync)
 ```
 
 - anchor = 標題 slug（標準 Markdown，VS Code／GitHub／Obsidian 都能跳）
 - 類別之間以 `---` 分隔，檔頭有類別目錄
-- 簡單 auto-property 集中成「屬性一覽」表，不花 AI
+- 簡單 auto-property 集中成「Properties」表，不花 AI
 - 增量更新：只重寫有變動的節點，其餘原字節保留
+- `side.language` 可切換 `en`（預設）／`zh-TW`，文件標籤與 AI 敘述會一起換
 
 ## 前置條件
 

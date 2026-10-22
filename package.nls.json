@@ -1,0 +1,14 @@
+{
+  "side.description": "Turn existing C# source code into a Markdown documentation set with call chains, so humans can understand what the code does.",
+  "side.view.docs": "Semantic Docs",
+  "side.cmd.sync": "S-IDE: Sync Semantic Docs",
+  "side.cmd.rebuild": "S-IDE: Rebuild All Semantic Docs",
+  "side.cmd.settings": "S-IDE: Open Settings",
+  "side.cmd.setKey": "S-IDE: Set API Key",
+  "side.cfg.language.desc": "Language of the generated documents and AI descriptions.",
+  "side.cfg.language.en": "English",
+  "side.cfg.language.zh": "Traditional Chinese",
+  "side.cfg.baseUrl.desc": "OpenAI-compatible endpoint. Works with OpenAI, DeepSeek, OpenRouter, local Ollama, OpenCode Go, and others.",
+  "side.cfg.model.desc": "Model name, e.g. gpt-4o-mini, deepseek-chat, or qwen2.5-coder:7b.",
+  "side.cfg.docsDir.desc": "Output folder for the generated documents, relative to the workspace root."
+}

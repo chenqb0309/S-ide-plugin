@@ -1,7 +1,7 @@
 {
   "name": "s-ide-plugin",
   "displayName": "S-IDE",
-  "description": "把既有 C# 原始碼翻成帶呼叫鏈的 Markdown 文件群，讓人看得懂程式在做什麼。",
+  "description": "%side.description%",
   "version": "0.1.0",
   "publisher": "chenqb0309",
   "license": "UNLICENSED",
@@ -41,50 +41,63 @@
       "side": [
         {
           "id": "side.docs",
-          "name": "語義文件"
+          "name": "%side.view.docs%"
         }
       ]
     },
     "configuration": {
       "title": "S-IDE",
       "properties": {
+        "side.language": {
+          "type": "string",
+          "enum": [
+            "en",
+            "zh-TW"
+          ],
+          "default": "en",
+          "enumDescriptions": [
+            "%side.cfg.language.en%",
+            "%side.cfg.language.zh%"
+          ],
+          "description": "%side.cfg.language.desc%"
+        },
         "side.baseUrl": {
           "type": "string",
           "default": "https://api.openai.com/v1",
-          "markdownDescription": "OpenAI 相容端點。例如 OpenAI、DeepSeek、OpenRouter、本機 Ollama、OpenCode Go…"
+          "markdownDescription": "%side.cfg.baseUrl.desc%"
         },
         "side.model": {
           "type": "string",
           "default": "",
-          "description": "模型名稱，例如 gpt-4o-mini、deepseek-chat、qwen2.5-coder:7b"
+          "description": "%side.cfg.model.desc%"
         },
         "side.docsDir": {
           "type": "string",
           "default": "semDocs",
-          "description": "語義文件輸出目錄（相對 workspace 根）。不存在時視為尚未建立。"
+          "description": "%side.cfg.docsDir.desc%"
         }
       }
     },
     "commands": [
       {
         "command": "side.syncDocs",
-        "title": "S-IDE: 同步語義文件",
+        "title": "%side.cmd.sync%",
         "icon": "$(book)"
       },
       {
         "command": "side.rebuildDocs",
-        "title": "S-IDE: 重建全部語義文件",
+        "title": "%side.cmd.rebuild%",
         "icon": "$(refresh)"
       },
       {
-        "command": "side.setApiKey",
-        "title": "S-IDE: 設定 API Key",
-        "icon": "$(key)"
+        "command": "side.openSettings",
+        "title": "%side.cmd.settings%",
+        "icon": "$(gear)"
       },
       {
-        "command": "side.openSettings",
-        "title": "S-IDE: 開啟設定",
-        "icon": "$(gear)"
+        "command": "side.setApiKey",
+        "title": "%side.cmd.setKey%",
+        "icon": "$(key)"
       }
     ],
     "menus": {

@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as core from '../core';
 import * as feature from '../docs/feature';
+import type { UiStrings } from '../i18n';
 
 /**
  * 側邊欄：動作 + 狀態 + 文件樹。
@@ -23,6 +24,7 @@ export class DocsTreeProvider implements vscode.TreeDataProvider<Node> {
   constructor(
     private readonly workspaceRoot: () => string | undefined,
     private readonly docsDir: () => string,
+    private readonly ui: () => UiStrings,
   ) {}
 
   refresh(): void {
@@ -66,7 +68,7 @@ export class DocsTreeProvider implements vscode.TreeDataProvider<Node> {
     if (root) {
       item.command = {
         command: 'vscode.open',
-        title: '開啟',
+        title: this.ui().open,
         arguments: [vscode.Uri.file(path.join(root, node.rel))],
       };
     }
@@ -74,10 +76,12 @@ export class DocsTreeProvider implements vscode.TreeDataProvider<Node> {
   }
 
   getChildren(node?: Node): Node[] {
+    const t = this.ui();
+
     if (!node) {
       return [
-        { kind: 'group', id: 'actions', label: '動作' },
-        { kind: 'group', id: 'files', label: '文件' },
+        { kind: 'group', id: 'actions', label: t.groupActions },
+        { kind: 'group', id: 'files', label: t.groupDocs },
       ];
     }
 
@@ -85,16 +89,16 @@ export class DocsTreeProvider implements vscode.TreeDataProvider<Node> {
 
     if (node.kind === 'group' && node.id === 'actions') {
       return [
-        { kind: 'action', label: '同步語義文件', command: 'side.syncDocs', icon: 'sync' },
-        { kind: 'action', label: '重建全部', command: 'side.rebuildDocs', icon: 'refresh' },
-        { kind: 'action', label: '設定 AI', command: 'side.openSettings', icon: 'gear' },
-        { kind: 'status', label: feature.lastRunSummary() || '尚未同步' },
+        { kind: 'action', label: t.actionSync, command: 'side.syncDocs', icon: 'sync' },
+        { kind: 'action', label: t.actionRebuild, command: 'side.rebuildDocs', icon: 'refresh' },
+        { kind: 'action', label: t.actionSettings, command: 'side.openSettings', icon: 'gear' },
+        { kind: 'status', label: feature.lastRunSummary() || t.notSynced },
       ];
     }
 
     if (node.kind === 'group' && node.id === 'files') {
       const root = this.workspaceRoot();
-      if (!root) return [{ kind: 'status', label: '尚未開啟資料夾' }];
+      if (!root) return [{ kind: 'status', label: t.noFolderOpen }];
 
       const dir = this.docsDir();
       let files: string[] = [];
@@ -104,7 +108,7 @@ export class DocsTreeProvider implements vscode.TreeDataProvider<Node> {
         files = [];
       }
 
-      if (!files.length) return [{ kind: 'status', label: '還沒有文件，先按「同步語義文件」' }];
+      if (!files.length) return [{ kind: 'status', label: t.noDocuments }];
       return buildTree(files, dir);
     }
 

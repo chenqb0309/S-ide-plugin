@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ensureDir, readText, writeText } from '../fsx';
 import { DOC_VERSION, INDEX_FILE, MARKER_FILE, renderIndex } from './markdown';
+import { labelsFor, type DocLabels } from './labels';
 
 export const DOCS_DIR_DEFAULT = 'semDocs';
 
@@ -9,6 +10,8 @@ export interface Marker {
   version: number;
   generator: string;
   createdAt: string;
+  /** 上次產生時的輸出語言；不同就要全量重建，避免中英混在一起 */
+  language?: string;
 }
 
 export function markerPath(dir: string): string {
@@ -24,18 +27,20 @@ export function readMarker(dir: string): Marker | null {
       version: Number(parsed.version ?? 0),
       generator: String(parsed.generator ?? ''),
       createdAt: String(parsed.createdAt ?? ''),
+      language: typeof parsed.language === 'string' ? parsed.language : undefined,
     };
   } catch {
     return null;
   }
 }
 
-export function writeMarker(dir: string, previous?: Marker | null): void {
+export function writeMarker(dir: string, previous?: Marker | null, language = 'en'): void {
   const marker: Marker = {
     version: DOC_VERSION,
     generator: 's-ide/docs',
     // 版本升級時保留原本的建立時間，避免每次同步都改這一行
     createdAt: previous?.createdAt || new Date().toISOString(),
+    language,
   };
   writeText(markerPath(dir), JSON.stringify(marker, null, 2) + '\n');
 }
@@ -99,11 +104,11 @@ export function pruneEmptyDirs(dir: string, stopAt: string): void {
 }
 
 /** 重建 index.md。內容全部由檔案推導，不存任何狀態。 */
-export function writeIndex(dir: string): void {
+export function writeIndex(dir: string, labels: DocLabels = labelsFor('en')): void {
   ensureDir(dir);
   const entries = listDocFiles(dir).map((rel) => ({
     relMd: rel,
     classes: classesIn(readText(path.join(dir, rel))),
   }));
-  writeText(path.join(dir, INDEX_FILE), renderIndex(entries));
+  writeText(path.join(dir, INDEX_FILE), renderIndex(entries, labels));
 }

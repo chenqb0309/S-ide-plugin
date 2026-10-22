@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import * as core from '../core';
+import { normalizeLang, uiFor, type UiStrings } from '../i18n';
 
 /**
  * semDocs：把 C# 翻成可讀的語義文件。
@@ -40,34 +41,35 @@ export async function syncDocs(deps: DocsDeps, mode: 'auto' | 'full' = 'auto'): 
   }
 
   const root = deps.workspaceRoot();
+  const lang = normalizeLang(deps.config().get<string>('language'));
+  const t = uiFor(lang);
+
   if (!root) {
-    void vscode.window.showErrorMessage('S-IDE：請先開啟一個資料夾。');
+    void vscode.window.showErrorMessage(t.openFolderFirst);
     return;
   }
 
-  // 沒有 AI 就沒有產品：不允許產出「有結構、沒說明」的文件。
+  // No AI, no product: refuse to emit structure without descriptions.
   const ai = await aiConfig(deps);
   if (!ai.apiKey || !ai.model) {
-    const action = await vscode.window.showErrorMessage(
-      'S-IDE：尚未設定 API Key 或模型。語義文件需要 AI 產生說明，因此不會執行。',
-      '設定 API Key',
-      '開啟設定',
-    );
-    if (action === '設定 API Key') await vscode.commands.executeCommand('side.setApiKey');
-    else if (action === '開啟設定') await vscode.commands.executeCommand('workbench.action.openSettings', 'side.model');
+    const action = await vscode.window.showErrorMessage(t.noApiConfig, t.btnSetKey, t.btnOpenSettings);
+    if (action === t.btnSetKey) await vscode.commands.executeCommand('side.setApiKey');
+    else if (action === t.btnOpenSettings) {
+      await vscode.commands.executeCommand('workbench.action.openSettings', 'side.model');
+    }
     return;
   }
 
   running = true;
 
   try {
-    const stats = await runSync(deps, root, mode, ai);
-    report(deps, stats);
+    const stats = await runSync(deps, root, mode, ai, t, lang);
+    report(deps, stats, t, lang);
   } catch (e) {
     const msg = (e as Error).message;
-    deps.out.appendLine(`❌ semDocs 同步失敗：${msg}`);
+    deps.out.appendLine(`ERROR ${t.syncFailed(msg)}`);
     deps.out.show(true);
-    void vscode.window.showErrorMessage(`S-IDE：${msg}`);
+    void vscode.window.showErrorMessage(`S-IDE: ${msg}`);
   } finally {
     running = false;
     const next = queued;
@@ -81,9 +83,12 @@ async function runSync(
   root: string,
   forced: 'auto' | 'full',
   ai: core.docs.DocAiConfig,
+  t: UiStrings,
+  language: 'en' | 'zh-TW',
 ): Promise<RunStats> {
   const cfg = deps.config();
   const relDocsDir = cfg.get<string>('docsDir', core.docs.DOCS_DIR_DEFAULT) || core.docs.DOCS_DIR_DEFAULT;
+  const labels = core.docs.labelsFor(language);
   const docsRoot = path.join(root, relDocsDir);
 
   const hasGit = core.docs.isGitRepo(root);
@@ -97,27 +102,33 @@ async function runSync(
   // 已 commit 的改動 status 看不到，要另外從 diff 補。
   const diffed = baseline ? core.docs.diffNameStatus(root, baseline) : [];
 
-  const decision = forced === 'full'
-    ? { mode: 'full' as const, reason: '使用者要求全量重建' }
-    : core.docs.decide({
-        hasGit,
-        hasMarker: marker !== null,
-        markerVersion: marker?.version ?? 0,
-        baseline,
-        changes: [...changes, ...diffed],
-        relDocsDir,
-      });
+  const decision =
+    forced === 'full'
+      ? { mode: 'full' as const, reasonText: t.reasonForced }
+      : marker && marker.language && marker.language !== language
+        ? { mode: 'full' as const, reasonText: t.reasonLanguage(marker.language, language) }
+        : (() => {
+            const d = core.docs.decide({
+              hasGit,
+              hasMarker: marker !== null,
+              markerVersion: marker?.version ?? 0,
+              baseline,
+              changes: [...changes, ...diffed],
+              relDocsDir,
+            });
+            return { mode: d.mode, reasonText: reasonText(d, t) };
+          })();
 
-  log(deps, `模式：${decision.mode} —— ${decision.reason}`);
+  log(deps, t.modeLine(decision.mode, decision.reasonText));
 
   if (decision.mode === 'none') {
-    void vscode.window.showInformationMessage('S-IDE：語義文件已同步，沒有需要更新的地方。');
-    return { mode: 'none', reason: decision.reason, files: 0, rewritten: 0, removed: 0 };
+    void vscode.window.showInformationMessage(t.upToDate);
+    return { mode: 'none', reason: decision.reasonText, files: 0, rewritten: 0, removed: 0 };
   }
 
   const stats: RunStats = {
     mode: decision.mode,
-    reason: decision.reason,
+    reason: decision.reasonText,
     files: 0,
     rewritten: 0,
     removed: 0,
@@ -180,18 +191,18 @@ async function runSync(
   const universe = decision.mode === 'full' ? collectUniverse(targets, docsRoot, relDocsDir) : [...targets.keys()];
 
   const graph = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'S-IDE：建立呼叫圖', cancellable: true },
+    { location: vscode.ProgressLocation.Notification, title: t.progressGraph, cancellable: true },
     async (progress, token) => {
       const tick = (rel: string, increment: number): void => progress.report({ message: rel, increment });
       const logLine = (line: string): void => log(deps, line);
       return decision.mode === 'full'
-        ? buildCallGraph(index, root, universe, tick, token, logLine)
-        : buildCallGraphLocal(index, root, universe, tick, token, logLine);
+        ? buildCallGraph(index, root, universe, tick, token, logLine, t)
+        : buildCallGraphLocal(index, root, universe, tick, token, logLine, t);
     },
   );
 
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'S-IDE：同步語義文件', cancellable: true },
+    { location: vscode.ProgressLocation.Notification, title: t.progressSync, cancellable: true },
     async (progress, token) => {
       let done = 0;
       for (const [relCs, how] of [...targets.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -200,7 +211,7 @@ async function runSync(
 
         const fileDoc = await index.get(path.join(root, relCs));
         if (!fileDoc) {
-          log(deps, `  跳過 ${relCs}（語言伺服器沒有回傳符號）`);
+          log(deps, t.skippedNoSymbols(relCs));
           continue;
         }
 
@@ -215,7 +226,7 @@ async function runSync(
           }
         }
 
-        const out = await writeOne(deps, root, docsRoot, relDocsDir, fileDoc, changed, ai, graph, missingProse);
+        const out = await writeOne(deps, root, docsRoot, relDocsDir, fileDoc, changed, ai, graph, missingProse, labels, t);
         if (out) {
           pending.push(out);
           stats.rewritten += 1;
@@ -223,7 +234,7 @@ async function runSync(
         stats.files += 1;
         done += 1;
       }
-      if (done === 0 && targets.size) log(deps, '  沒有任何檔案被處理');
+      if (done === 0 && targets.size) log(deps, t.noFilesProcessed);
     },
   );
 
@@ -237,24 +248,26 @@ async function runSync(
     log(deps, `  ✏️  ${item.relMd}`);
   }
 
-  core.docs.writeIndex(docsRoot);
-  // 版本升級時也要更新；否則 marker 永遠停在舊版，每次同步都會判定「模板版本不同」而全量重建。
-  if (!marker || marker.version !== core.docs.DOC_VERSION) core.docs.writeMarker(docsRoot, marker);
+  core.docs.writeIndex(docsRoot, labels);
+  // 版本升級或語言切換時也要更新；否則 marker 會停在舊狀態，每次同步都判定不一致。
+  if (!marker || marker.version !== core.docs.DOC_VERSION || marker.language !== language) {
+    core.docs.writeMarker(docsRoot, marker, language);
+  }
 
   // 這是一個會靜默漏改動的坑：semDocs 還沒 commit 時，baseline 只能退到 HEAD；
   // 一旦使用者先 commit 了 code，那個改動就從 diff 消失了。先講清楚。
   if (hasGit && !core.docs.isDirTracked(root, relDocsDir)) {
     log(deps, '');
-    log(deps, `⚠️  ${relDocsDir}/ 還沒納入版控。`);
-    log(deps, '    目前 baseline 會退到 HEAD；若你先 commit code 再同步，那次改動會被漏掉。');
-    log(deps, `    建議現在 commit 一次 ${relDocsDir}/，之後增量才會穩定。`);
+    log(deps, t.notTrackedWarning);
+    log(deps, t.baselineWarning);
+    log(deps, t.commitWarning(relDocsDir));
   }
 
   if (missingProse.length) {
     log(deps, '');
-    log(deps, `⚠️  ${missingProse.length} 個節點沒有說明（結構仍然正確，下次同步會補）：`);
+    log(deps, t.missingProse(missingProse.length));
     for (const id of missingProse.slice(0, 10)) log(deps, `    - ${id}`);
-    if (missingProse.length > 10) log(deps, `    …其餘 ${missingProse.length - 10} 個`);
+    if (missingProse.length > 10) log(deps, t.missingMore(missingProse.length - 10));
   }
 
   return stats;
@@ -270,6 +283,8 @@ async function writeOne(
   ai: core.docs.DocAiConfig,
   graph: Map<string, core.docs.CallLink[]>,
   missingProse: string[],
+  labels: core.docs.DocLabels,
+  t: UiStrings,
 ): Promise<{ abs: string; text: string; relMd: string } | undefined> {
   const mdAbs = path.join(root, fileDoc.relMd);
   const oldText = core.exists(mdAbs) ? core.readText(mdAbs) : '';
@@ -287,7 +302,7 @@ async function writeOne(
 
   const currentAnchors = new Set<string>();
   for (const cls of fileDoc.classes) {
-    if (cls.props.length) currentAnchors.add(core.docs.propsAnchor());
+    if (cls.props.length) currentAnchors.add(core.docs.propsAnchor(labels));
     for (const m of cls.members) currentAnchors.add(m.anchor);
   }
   const currentClasses = fileDoc.classes.map((c) => c.name);
@@ -305,7 +320,7 @@ async function writeOne(
     const result = await core.docs.writeProse(ai, items, (line) => log(deps, line));
     prose = result.prose;
     if (result.failed.length) {
-      log(deps, `  ⚠️  ${fileDoc.relMd}：${result.failed.length}/${items.length} 個節點沒有說明（下次同步會補）`);
+      log(deps, t.missingProseFile(fileDoc.relMd, result.failed.length, items.length));
       for (const id of result.failed) missingProse.push(id);
     }
   }
@@ -318,12 +333,12 @@ async function writeOne(
       if (old && !changed.has(member.id) && core.docs.hasProse(old)) return old;
 
       // 有變動但這次拿不到說明時，寧可留白（會被回報），也不要沿用舊的可能已錯的敘述
-      const text = core.docs.renderMember(member, prose.get(member.id), graph.get(member.id) ?? [], fileDoc.relMd);
+      const text = core.docs.renderMember(member, prose.get(member.id), graph.get(member.id) ?? [], fileDoc.relMd, labels);
       return text;
     }),
   }));
 
-  const next = core.docs.renderFile(fileDoc.relCs, classes);
+  const next = core.docs.renderFile(fileDoc.relCs, classes, labels);
   if (next === oldText) return undefined;
 
   return { abs: mdAbs, text: next, relMd: fileDoc.relMd };
@@ -565,6 +580,7 @@ async function buildCallGraphLocal(
   tick: (rel: string, increment: number) => void,
   token: vscode.CancellationToken,
   log: (line: string) => void,
+  t: UiStrings,
 ): Promise<Map<string, core.docs.CallLink[]>> {
   const outgoing = new Map<string, core.docs.CallLink[]>();
   const callRe = /\b([A-Za-z_]\w*)\s*\(/g;
@@ -636,7 +652,7 @@ async function buildCallGraphLocal(
     }
   }
 
-  log(`呼叫圖（增量）：${queries} 個呼叫點，${edges} 條邊、${failed} 次失敗`);
+  log(t.callGraphLocal(queries, edges, failed));
   return outgoing;
 }
 
@@ -659,6 +675,7 @@ async function buildCallGraph(
   tick: (rel: string, increment: number) => void,
   token: vscode.CancellationToken,
   log: (line: string) => void,
+  t: UiStrings,
 ): Promise<Map<string, core.docs.CallLink[]>> {
   const outgoing = new Map<string, core.docs.CallLink[]>();
   const candidates = new Map<
@@ -746,9 +763,7 @@ async function buildCallGraph(
     outgoing.set(c.callerId, list);
   }
 
-  log(
-    `呼叫圖：${members.length} 個節點，${ok} 有參考、${empty} 無參考、${failed} 查詢失敗（${outgoing.size} 個有 outgoing）`,
-  );
+  log(t.callGraphRefs(members.length, ok, empty, failed, outgoing.size));
   return outgoing;
 }
 
@@ -769,6 +784,7 @@ async function aiConfig(deps: DocsDeps): Promise<core.docs.DocAiConfig> {
     baseUrl: cfg.get<string>('baseUrl', 'https://api.openai.com/v1'),
     model: cfg.get<string>('model', ''),
     apiKey: (await deps.secrets.get(KEY_SECRET)) ?? '',
+    lang: cfg.get<string>('language', 'en'),
   };
 }
 
@@ -783,22 +799,36 @@ export function lastRunSummary(): string {
   return lastSummary;
 }
 
-function report(deps: DocsDeps, stats: RunStats): void {
+/** 把 core 回傳的 reasonKey 翻成目前語言。 */
+function reasonText(d: core.docs.Decision, t: UiStrings): string {
+  switch (d.reasonKey) {
+    case 'noMarker':
+      return t.reasonNoMarker;
+    case 'versionMismatch':
+      return t.reasonVersion(Number(d.reasonParams?.from ?? 0), Number(d.reasonParams?.to ?? 0));
+    case 'noGit':
+      return t.reasonNoGit;
+    case 'noCommits':
+      return t.reasonNoCommits;
+    case 'noChanges':
+      return t.reasonNoChanges;
+    case 'changed':
+      return t.reasonChanged(Number(d.reasonParams?.count ?? 0));
+  }
+}
+
+function report(deps: DocsDeps, stats: RunStats, t: UiStrings, language: 'en' | 'zh-TW'): void {
   deps.out.show(true);
   deps.out.appendLine('');
-  deps.out.appendLine(
-    `完成：處理 ${stats.files} 檔、重寫 ${stats.rewritten} 份文件、移除 ${stats.removed} 份（${stats.mode}）`,
-  );
+  deps.out.appendLine(t.completed(stats.files, stats.rewritten, stats.removed, stats.mode));
 
-  const time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+  const locale = language === 'zh-TW' ? 'zh-TW' : 'en-GB';
+  const time = new Date().toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   lastSummary =
     stats.mode === 'none'
-      ? `已同步 · ${time}`
-      : `${stats.rewritten} 份更新 · ${stats.files} 檔 · ${time}`;
+      ? t.summaryUpToDate(time)
+      : t.summaryUpdated(stats.rewritten, stats.files, time);
 
   if (stats.mode === 'none') return;
-  void vscode.window.setStatusBarMessage(
-    `$(check) S-IDE docs：${stats.rewritten} 份更新（${stats.files} 檔）`,
-    4000,
-  );
+  void vscode.window.setStatusBarMessage(t.statusDone(stats.rewritten, stats.files), 4000);
 }

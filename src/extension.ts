@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as docsFeature from './docs/feature';
+import { normalizeLang, uiFor, type Lang, type UiStrings } from './i18n';
 import { DocsTreeProvider } from './views/docsTree';
 import { openSettingsPanel } from './views/settingsPanel';
 
@@ -20,18 +21,22 @@ export function activate(context: vscode.ExtensionContext): void {
   ctx = context;
   out = vscode.window.createOutputChannel('S-IDE');
 
-  tree = new DocsTreeProvider(workspaceRoot, docsDir);
+  tree = new DocsTreeProvider(workspaceRoot, docsDir, ui);
 
   context.subscriptions.push(
     out,
     vscode.window.registerTreeDataProvider('side.docs', tree),
     vscode.workspace.onDidChangeWorkspaceFolders(() => tree.refresh()),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('side.language')) tree.refresh();
+    }),
     registerCommands(),
   );
 
-  out.appendLine('S-IDE 已啟用。');
-  out.appendLine(`  工作區：${workspaceRoot() ?? '(未開啟資料夾)'}`);
-  out.appendLine('  semDocs：從側邊欄按「同步語義文件」');
+  const t = ui();
+  out.appendLine(t.activated);
+  out.appendLine(t.workspaceLine(workspaceRoot() ?? t.noFolderOpen));
+  out.appendLine(t.sidebarHint);
 }
 
 export function deactivate(): void {
@@ -41,16 +46,17 @@ export function deactivate(): void {
 function registerCommands(): vscode.Disposable {
   return vscode.Disposable.from(
     vscode.commands.registerCommand('side.setApiKey', async () => {
+      const t = ui();
       const value = await vscode.window.showInputBox({
-        title: 'S-IDE: API Key',
-        prompt: '只存在 VS Code 的加密儲存區，不會寫進 settings.json',
+        title: t.apiKeyTitle,
+        prompt: t.apiKeyPrompt,
         password: true,
         ignoreFocusOut: true,
       });
       if (value === undefined) return;
       await ctx.secrets.store(KEY_SECRET, value.trim());
       tree.refresh();
-      void vscode.window.showInformationMessage('S-IDE：API Key 已儲存。');
+      void vscode.window.showInformationMessage(t.apiKeySaved);
     }),
 
     vscode.commands.registerCommand('side.syncDocs', async () => {
@@ -79,6 +85,14 @@ function workspaceRoot(): string | undefined {
 
 function docsDir(): string {
   return config().get<string>('docsDir', 'semDocs') || 'semDocs';
+}
+
+function lang(): Lang {
+  return normalizeLang(config().get<string>('language'));
+}
+
+function ui(): UiStrings {
+  return uiFor(lang());
 }
 
 function config(): vscode.WorkspaceConfiguration {

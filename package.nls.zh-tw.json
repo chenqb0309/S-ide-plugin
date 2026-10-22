@@ -1,0 +1,14 @@
+{
+  "side.description": "把既有的 C# 原始碼翻成帶呼叫鏈的 Markdown 文件群，讓人看得懂程式在做什麼。",
+  "side.view.docs": "語義文件",
+  "side.cmd.sync": "S-IDE: 同步語義文件",
+  "side.cmd.rebuild": "S-IDE: 重建全部語義文件",
+  "side.cmd.settings": "S-IDE: 開啟設定",
+  "side.cmd.setKey": "S-IDE: 設定 API Key",
+  "side.cfg.language.desc": "產出文件與 AI 敘述的語言。",
+  "side.cfg.language.en": "英文",
+  "side.cfg.language.zh": "繁體中文",
+  "side.cfg.baseUrl.desc": "OpenAI 相容端點。支援 OpenAI、DeepSeek、OpenRouter、本機 Ollama、OpenCode Go 等。",
+  "side.cfg.model.desc": "模型名稱，例如 gpt-4o-mini、deepseek-chat、qwen2.5-coder:7b。",
+  "side.cfg.docsDir.desc": "產出文件的目錄（相對 workspace 根）。"
+}
