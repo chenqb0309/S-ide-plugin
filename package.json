@@ -5,6 +5,15 @@
   "version": "0.1.0",
   "publisher": "chenqb0309",
   "license": "MIT",
+  "icon": "resources/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chenqb0309/S-ide-plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chenqb0309/S-ide-plugin/issues"
+  },
+  "homepage": "https://github.com/chenqb0309/S-ide-plugin#readme",
   "engines": {
     "vscode": "^1.90.0"
   },
