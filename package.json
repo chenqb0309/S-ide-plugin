@@ -1,6 +1,6 @@
 {
   "name": "s-ide-plugin",
-  "displayName": "S-IDE",
+  "displayName": "S-IDE: Semantic Docs for C#",
   "description": "%side.description%",
   "version": "0.1.0",
   "publisher": "chenqb0309",
